@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-module Common.Query where
+module Core.Query where
 
 import Control.Monad.Except
 import Control.Monad.Reader
@@ -8,16 +8,20 @@ import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 
+import qualified Frontend.Surface as S
+
 
 type Store k v = IORef (Map k v)
 
 data Database = Database
   { dbSource :: Store FilePath String
+  , dbParsed :: Store FilePath (Either S.Error S.Term)
   }
 
 emptyDatabase :: IO Database
 emptyDatabase = Database
   <$> newIORef Map.empty
+  <*> newIORef Map.empty
 
 
 -- 

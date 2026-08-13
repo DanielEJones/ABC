@@ -1,4 +1,4 @@
-module Common.Command where
+module Core.Command where
 
 import System.Environment 
 
