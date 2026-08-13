@@ -10,6 +10,7 @@ import qualified Data.Map as Map
 
 import qualified Frontend.Surface as Sf
 import qualified Frontend.Syntax as Sn
+import qualified Lowering.ANF as Ir
 
 
 type Store k v = IORef (Map k v)
@@ -18,11 +19,13 @@ data Database = Database
   { dbSource  :: Store FilePath String
   , dbParsed  :: Store FilePath (Either Error Sf.Term)
   , dbChecked :: Store FilePath (Either Error Sn.Term)
+  , dbLowered :: Store FilePath (Either Error Ir.Term)
   }
 
 emptyDatabase :: IO Database
 emptyDatabase = Database
   <$> newIORef Map.empty
+  <*> newIORef Map.empty
   <*> newIORef Map.empty
   <*> newIORef Map.empty
 

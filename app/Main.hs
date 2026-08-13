@@ -13,6 +13,9 @@ import Frontend.Surface hiding (Term, Type, Error)
 import qualified Frontend.Syntax as Sn
 import Frontend.Syntax hiding (Term, Type, Error)
 
+import qualified Lowering.ANF as Ir
+import Lowering.ANF hiding (Term, emptyContext)
+
 
 fetchSource :: FilePath -> Query String
 fetchSource path = cached dbSource path $ do
@@ -31,6 +34,12 @@ fetchChecked path = cachedFallible dbChecked path $ do
   let checked = check (emptyContext $ mkLoc path 0 0) parsed Sn.Number
   liftErr TypeError checked
 
+fetchANF :: FilePath -> Query (Either Error Ir.Term)
+fetchANF path = cachedFallible dbLowered path $ do
+  checked <- liftQuery (fetchChecked path)
+  let lowered = lower checked
+  pure lowered
+
 
 main :: IO ()
 main = do
@@ -39,7 +48,7 @@ main = do
 
   db <- emptyDatabase
   forM_ (optFiles options) $ \filePath -> do
-    tree <- runQuery (fetchChecked filePath) db
+    tree <- runQuery (fetchANF filePath) db
     case tree of
       Left e  -> putStrLn (show e)
       Right a -> putStrLn (show a)
