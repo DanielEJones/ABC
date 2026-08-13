@@ -63,6 +63,7 @@ executable ABC
                     , Core.Query
                     , Frontend.Surface
                     , Frontend.Syntax
+                    , Generation.CodeGen
                     , Lowering.ANF
 
     -- LANGUAGE extensions used by modules in this package.
@@ -73,6 +74,8 @@ executable ABC
                     , containers
                     , megaparsec
                     , mtl
+                    , process
+                    , temporary
 
     -- Directories containing source files.
     hs-source-dirs:   app
