@@ -8,19 +8,22 @@ import Data.IORef
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import qualified Frontend.Surface as S
+import qualified Frontend.Surface as Sf
+import qualified Frontend.Syntax as Sn
 
 
 type Store k v = IORef (Map k v)
 
 data Database = Database
-  { dbSource :: Store FilePath String
-  , dbParsed :: Store FilePath (Either S.Error S.Term)
+  { dbSource  :: Store FilePath String
+  , dbParsed  :: Store FilePath (Either Error Sf.Term)
+  , dbChecked :: Store FilePath (Either Error Sn.Term)
   }
 
 emptyDatabase :: IO Database
 emptyDatabase = Database
   <$> newIORef Map.empty
+  <*> newIORef Map.empty
   <*> newIORef Map.empty
 
 
@@ -59,6 +62,32 @@ runQueryFallible = runQuery . runExceptT . unFallible
 cachedFallible :: Ord k => (Database -> Store k (Either e v)) -> k -> QueryFallible e v -> Query (Either e v)
 cachedFallible store key = cached store key . runExceptT . unFallible
 
-liftQuery :: Query a -> QueryFallible e a
-liftQuery = QueryFallible . lift
+lowerQuery :: Query a -> QueryFallible e a
+lowerQuery = QueryFallible . lift
+
+liftQuery :: Query (Either e a) -> QueryFallible e a
+liftQuery q = do
+  res <- lowerQuery q
+  case res of
+    Left e  -> throwError e
+    Right a -> pure a
+
+--
+-- Error
+--
+
+data Error
+  = ParseError Sf.Error
+  | TypeError  Sn.Error
+  deriving Show
+
+liftErr' :: (e -> Error) -> Either e a -> Query (Either Error a)
+liftErr' lifter e = pure $ case e of
+  Left err -> Left (lifter err)
+  Right a  -> Right a
+
+liftErr :: (e -> Error) -> Either e a -> QueryFallible Error a
+liftErr lifter e = case e of
+  Left err -> throwError (lifter err)
+  Right a  -> pure a
 

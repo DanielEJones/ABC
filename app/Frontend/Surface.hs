@@ -60,7 +60,7 @@ parseArith = parens $
         <*> parseTerm
 
 parseTerm :: Parser Term
-parseTerm = located (try parseLet <|> parseArith <|> parseVar <|> parseNumLit)
+parseTerm = located (try parseLet <|> parseArith <|> parseNumLit <|> parseVar)
 
 
 --

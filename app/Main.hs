@@ -2,12 +2,16 @@ module Main (main) where
 
 import Control.Monad (forM_)
 import Control.Monad.Trans (liftIO)
-import Text.Megaparsec (errorBundlePretty)
 
 import Core.Command
+import Core.Common
 import Core.Query
 
-import Frontend.Surface
+import qualified Frontend.Surface as Sf
+import Frontend.Surface hiding (Term, Type, Error)
+
+import qualified Frontend.Syntax as Sn
+import Frontend.Syntax hiding (Term, Type, Error)
 
 
 fetchSource :: FilePath -> Query String
@@ -15,11 +19,17 @@ fetchSource path = cached dbSource path $ do
   content <- liftIO (readFile path)
   pure content
 
-fetchParsed :: FilePath -> Query (Either Error Term)
+fetchParsed :: FilePath -> Query (Either Error Sf.Term)
 fetchParsed path = cached dbParsed path $ do
   source <- fetchSource path
   let ast = doParse path source
-  pure ast
+  liftErr' ParseError ast
+
+fetchChecked :: FilePath -> Query (Either Error Sn.Term)
+fetchChecked path = cachedFallible dbChecked path $ do
+  parsed <- liftQuery (fetchParsed path)
+  let checked = check (emptyContext $ mkLoc path 0 0) parsed Sn.Number
+  liftErr TypeError checked
 
 
 main :: IO ()
@@ -29,8 +39,8 @@ main = do
 
   db <- emptyDatabase
   forM_ (optFiles options) $ \filePath -> do
-    tree <- runQuery (fetchParsed filePath) db
+    tree <- runQuery (fetchChecked filePath) db
     case tree of
-      Left err -> putStrLn (errorBundlePretty err)
-      Right tm -> putStrLn (show tm)
+      Left e  -> putStrLn (show e)
+      Right a -> putStrLn (show a)
 
