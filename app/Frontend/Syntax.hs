@@ -1,5 +1,7 @@
 module Frontend.Syntax where
 
+import Control.Monad (zipWithM, when)
+
 import Core.Common
 import qualified Frontend.Surface as S
 
@@ -10,6 +12,7 @@ import qualified Frontend.Surface as S
 
 data Term
   = Let Name Type Term Term
+  | Call Name [Term]
   | Var Ix
 
   | NumLit Int
@@ -20,6 +23,15 @@ data Type
   = Number
   deriving (Show, Eq)
 
+data Sig = Sig
+  { sigName   :: Name
+  , sigParams :: [(Name, Type)]
+  , sigReturn :: Type 
+  }
+
+instance HasName Sig where
+  nameOf = sigName
+
 
 -- 
 -- Elaboration
@@ -28,6 +40,13 @@ data Type
 infer :: Context -> S.Term -> Elab (Term, Type)
 infer ctx tm = case tm of
   S.TmLoc l t -> infer (withLoc l ctx) t
+
+  S.Call n ts -> case findGlobal n ctx of
+    Nothing -> err ctx (UnboundFn n)
+    Just (Sig _ ps r) -> do
+      when (length ps /= length ts) $ err ctx (ArgumentMismatch n (length ps) (length ts))
+      ps' <- zipWithM (check ctx) ts (map snd ps)
+      pure (Call n ps', r)
 
   S.Var n -> case findLocal n ctx of
     Just (ix, a) -> pure (Var ix, a) 
@@ -63,6 +82,19 @@ checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
 
+checkSig :: Context -> S.Decl -> Elab Sig
+checkSig ctx decl = case decl of
+  S.DLoc l d -> checkSig (withLoc l ctx) d
+
+  S.FnDef n ps r _ -> 
+    Sig n <$> mapM (\(name, ty) -> pair name <$> checkType ctx ty) ps 
+          <*> checkType ctx r
+
+checkDecl :: Context -> S.Term -> Sig -> Elab Term
+checkDecl ctx tm (Sig _ ps r) = do
+  let fnCtx = foldl' (\c (n, t) -> bindLocal n t c) ctx ps
+  check fnCtx tm r
+
 
 --
 -- Elaboration Monad
@@ -79,7 +111,9 @@ data Error = Error
 data Error' 
   = UnInferable String
   | UnboundVar Name
+  | UnboundFn Name
   | TypeMismatch Type Type
+  | ArgumentMismatch Name Int Int
   deriving Show
 
 
@@ -90,10 +124,11 @@ data Error'
 data Context = Context 
   { ctxLoc  :: Loc
   , ctxVars :: [(Name, Type)]
+  , ctxGlob :: [Sig]
   }
 
 emptyContext :: Loc -> Context
-emptyContext loc = Context loc []
+emptyContext loc = Context loc [] []
 
 withLoc :: Loc -> Context -> Context
 withLoc loc ctx = ctx{ ctxLoc = loc }
@@ -112,4 +147,10 @@ findLocal n ctx = go (ctxVars ctx) 0
       | name == n = Just (ix, ty)
       | otherwise = go rest (ix + 1)
     go [] _ = Nothing
+
+bindGlobal :: Sig -> Context -> Context
+bindGlobal s ctx = ctx{ ctxGlob = s : ctxGlob ctx }
+
+findGlobal :: Name -> Context -> Maybe Sig
+findGlobal n ctx = findName n (ctxGlob ctx)
 

@@ -1,8 +1,9 @@
 module Main (main) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM, forM_)
 import Control.Monad.Trans (liftIO)
 
+import Text.Megaparsec (errorBundlePretty)
 import System.Process (readProcessWithExitCode)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Exit
@@ -18,7 +19,7 @@ import qualified Frontend.Syntax as Sn
 import Frontend.Syntax hiding (Term, Type, Error)
 
 import qualified Lowering.ANF as Ir
-import Lowering.ANF hiding (Term, emptyContext)
+import Lowering.ANF hiding (Term, emptyContext, bindGlobal)
 
 import Generation.CodeGen
 
@@ -28,29 +29,79 @@ fetchSource path = cached dbSource path $ do
   content <- liftIO (readFile path)
   pure content
 
-fetchParsed :: FilePath -> Query (Either Error Sf.Term)
+fetchParsed :: FilePath -> Query (Either Error [Sf.Decl])
 fetchParsed path = cached dbParsed path $ do
   source <- fetchSource path
   let ast = doParse path source
   liftErr' ParseError ast
 
-fetchChecked :: FilePath -> Query (Either Error Sn.Term)
-fetchChecked path = cachedFallible dbChecked path $ do
-  parsed <- liftQuery (fetchParsed path)
-  let checked = check (emptyContext $ mkLoc path 0 0) parsed Sn.Number
+fetchSignature :: Ident -> Query (Either Error Sn.Sig)
+fetchSignature ident@(Ident path name) = cachedFallible dbSigs ident $ do
+  decls <- liftQuery (fetchParsed path)
+  case findName name decls of
+    Nothing -> undefined
+    Just decl -> do 
+      let sig = checkSig (emptyContext $ mkLoc path 0 0 ) decl
+      liftErr TypeError sig
+
+fetchBody :: Ident -> Query (Either Error Sf.Term)
+fetchBody ident@(Ident path name) = cachedFallible dbDefs ident $ do
+  decls <- liftQuery (fetchParsed path)
+  case findName name decls of
+    Nothing -> undefined
+    Just decl -> pure (getTerm decl)
+
+fetchContext :: FilePath -> Query (Either Error Sn.Context)
+fetchContext path = cachedFallible dbCtx path $ do
+  decls <- liftQuery (fetchParsed path)
+  sigs <- forM decls (lowerQuery . fetchSignature . Ident path . nameOf)
+  let emptyCtx = emptyContext (mkLoc path 0 0)
+  pure . reduce sigs emptyCtx $ \s c -> case s of
+    Right sig -> bindGlobal sig c
+    _         -> c
+
+fetchChecked :: Ident -> Query (Either Error Sn.Term)
+fetchChecked ident@(Ident path _) = cachedFallible dbChecked ident $ do
+  sig  <- liftQuery (fetchSignature ident)
+  body <- liftQuery (fetchBody ident)    
+  ctx  <- liftQuery (fetchContext path)
+  let checked = checkDecl ctx body sig 
   liftErr TypeError checked
 
-fetchANF :: FilePath -> Query (Either Error Ir.Term)
-fetchANF path = cachedFallible dbLowered path $ do
-  checked <- liftQuery (fetchChecked path)
-  let lowered = lower checked
+fetchANF :: Ident -> Query (Either Error Ir.Decl)
+fetchANF ident@(Ident path _) = cachedFallible dbLowered ident $ do
+  checked <- liftQuery (fetchChecked ident)
+  signature <- liftQuery (fetchSignature ident)
+  context <- liftQuery (fetchContext path)
+  let lowered = lower context checked signature
   pure lowered
 
-fetchCode :: FilePath -> Query (Either Error String)
-fetchCode path = cachedFallible dbGenerated path $ do
-  lowered <- liftQuery (fetchANF path)
-  let generated = emit lowered
+fetchCode :: Ident -> Query (Either Error String)
+fetchCode ident = cachedFallible dbCodeGen ident $ do
+  lowered <- liftQuery (fetchANF ident)
+  let generated = emitDecl lowered
   pure generated
+
+fetchProto :: Ident -> Query (Either Error String)
+fetchProto ident = cachedFallible dbProtoGen ident $ do
+  sig <- liftQuery (fetchSignature ident)
+  let generated = emitSig sig
+  pure generated
+
+fetchCompiled :: FilePath -> Query (Either Error String)
+fetchCompiled path = cachedFallible dbCompiled path $ do
+  decls <- liftQuery (fetchParsed path)
+  protos <- forM decls (liftQuery . fetchProto . Ident path . nameOf)
+  code <- forM decls (liftQuery . fetchCode . Ident path . nameOf)
+  pure $ unlines 
+    [ "#include <stdio.h>\n"
+    , unlines protos
+    , unlines code
+    , "int main() {"
+    , "  int result = abc_main();"
+    , "  printf(\"%d\\n\", result);"
+    , "}"
+    ]
 
 
 main :: IO ()
@@ -60,10 +111,12 @@ main = do
 
   db <- emptyDatabase
   forM_ (optFiles options) $ \filePath -> do
-    tree <- runQuery (fetchCode filePath) db
+    tree <- runQuery (fetchCompiled filePath) db
     case tree of
-      Left e  -> putStrLn (show e)
       Right a -> compileAndRun a
+      Left e -> case e of
+        ParseError pErr -> putStrLn (errorBundlePretty pErr)
+        TypeError  tErr -> putStrLn (show tErr)
 
 
 compileAndRun :: String -> IO ()

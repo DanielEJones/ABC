@@ -11,10 +11,16 @@ import Core.Common
 -- Surface Datatypes
 --
 
+data Decl
+  = DLoc Loc Decl
+  | FnDef Name [(Name, Type)] Type Term
+  deriving Show
+
 data Term
   = TmLoc Loc Term
 
   | Let Name Type Term Term
+  | Call Name [Term]
   | Var Name
 
   | NumLit Int
@@ -26,14 +32,22 @@ data Type
   | Number
   deriving Show
   
+
 class HasLocation a where
   locate :: Loc -> a -> a
+
+instance HasLocation Decl where
+  locate = DLoc
 
 instance HasLocation Term where
   locate = TmLoc
 
 instance HasLocation Type where
   locate = TyLoc
+
+instance HasName Decl where
+  nameOf (DLoc _ d)      = nameOf d
+  nameOf (FnDef n _ _ _) = n
 
 
 --
@@ -46,6 +60,11 @@ parseLet = parens . into' "let" $
       <*> parseType
       <*> parseTerm
       <*> parseTerm
+
+parseCall :: Parser Term
+parseCall = parens $ 
+  Call <$> parseAtom
+       <*> many parseTerm
   
 parseVar :: Parser Term
 parseVar = Var <$> parseAtom
@@ -60,7 +79,7 @@ parseArith = parens $
         <*> parseTerm
 
 parseTerm :: Parser Term
-parseTerm = located (try parseLet <|> parseArith <|> parseNumLit <|> parseVar)
+parseTerm = located (try parseLet <|> try parseArith <|> try parseCall <|> parseNumLit <|> parseVar)
 
 
 --
@@ -74,12 +93,33 @@ parseType :: Parser Type
 parseType = parseNumber
 
 
+-- 
+-- Declaration Parser
+--
+
+parseParam :: Parser (Name, Type)
+parseParam = parens (pair <$> parseAtom <*> parseType)
+
+parseParams :: Parser [(Name, Type)]
+parseParams = braces (many parseParam)
+
+parseFnDef :: Parser Decl
+parseFnDef = parens . into' "define" $
+  FnDef <$> parseAtom
+        <*> parseParams
+        <*> parseType
+        <*> parseTerm
+
+parseDecl :: Parser Decl
+parseDecl = located parseFnDef
+
+
 --
 -- Entry Point
 --
 
-doParse :: FilePath -> String -> ParseResult Term
-doParse = parse (sc *> parseTerm <* sc <* eof) 
+doParse :: FilePath -> String -> ParseResult [Decl]
+doParse = parse (sc *> many parseDecl <* sc <* eof) 
 
 
 --
@@ -90,7 +130,6 @@ type Parser = Parsec Error' String
 type Error  = ParseErrorBundle String Error'
 type ParseResult = Either Error
 
--- Allows us to report custom errors in a megaparsec error bundle
 data Error' = Error'
   deriving (Show, Eq, Ord)
 
@@ -135,4 +174,13 @@ parseOp =
   <|> "-" `into` Sub 
   <|> "*" `into` Mul 
   <|> "/" `into` Div
+
+
+-- 
+-- Helpers
+--
+
+getTerm :: Decl -> Term
+getTerm (DLoc _ d)      = getTerm d
+getTerm (FnDef _ _ _ t) = t
 
