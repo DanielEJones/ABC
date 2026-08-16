@@ -18,17 +18,21 @@ data Decl
 
 data Term 
   = Let Name Type Expr Term 
+  | LetIf Name Type Val Term Term Term
+  | Assign Name Val
   | Ret Val
   deriving Show
 
 data Expr
-  = Arith Op Val Val
+  = Arith AOp Val Val
+  | Comp COp Val Val
   | Call Name [Val]
   deriving Show
 
 data Val
   = Var Name
   | NumLit Int
+  | BoolLit Bool
   deriving Show
 
 
@@ -62,7 +66,16 @@ normalize ctx tm k = case tm of
       Let n (getRetType f ctx) (Call f ts') <$> k (Var n)
 
   S.Var i -> k (getLocal i ctx)
-  
+
+  S.BoolLit b -> k (BoolLit b)
+
+  S.If a v t u -> 
+    normalize ctx v $ \v' -> do
+      n <- fresh
+      t' <- normalize ctx t (pure . Assign n)
+      u' <- normalize ctx u (pure . Assign n)
+      LetIf n a v' t' u' <$> k (Var n)
+
   S.NumLit i -> k (NumLit i)
 
   S.Arith o t u -> 
@@ -71,12 +84,20 @@ normalize ctx tm k = case tm of
         n <- fresh
         Let n Number (Arith o t' u') <$> k (Var n)
 
+  S.Comp o t u -> 
+    normalize ctx t $ \t' ->
+      normalize ctx u $ \u' -> do
+        n <- fresh
+        Let n Boolean (Comp o t' u') <$> k (Var n)
+
+
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
 normalizeList _ [] k = k []
 normalizeList ctx (t:ts) k = 
   normalizeList ctx ts $ \ts' -> 
     normalize ctx t $ \t' ->
       k (t' : ts')
+
 
 -- 
 -- ANF Monad

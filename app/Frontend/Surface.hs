@@ -23,13 +23,19 @@ data Term
   | Call Name [Term]
   | Var Name
 
+  | BoolLit Bool
+  | If Term Term Term
+
   | NumLit Int
-  | Arith Op Term Term
+
+  | Arith AOp Term Term
+  | Comp COp Term Term
   deriving Show
 
 data Type
   = TyLoc Loc Type
   | Number
+  | Boolean
   deriving Show
   
 
@@ -69,17 +75,43 @@ parseCall = parens $
 parseVar :: Parser Term
 parseVar = Var <$> parseAtom
 
+parseBoolLit :: Parser Term
+parseBoolLit = 
+      "true"  `into` BoolLit True
+  <|> "false" `into` BoolLit False
+
+parseIf :: Parser Term
+parseIf = parens . into' "if" $
+  If <$> parseTerm
+     <*> parseTerm
+     <*> parseTerm
+
 parseNumLit :: Parser Term
 parseNumLit = NumLit <$> parseRawNumber
 
 parseArith :: Parser Term
 parseArith = parens $
-  Arith <$> parseOp
+  Arith <$> parseAOp
         <*> parseTerm
         <*> parseTerm
 
+parseComp :: Parser Term
+parseComp = parens $
+  Comp <$> parseCOp
+       <*> parseTerm
+       <*> parseTerm
+
 parseTerm :: Parser Term
-parseTerm = located (try parseLet <|> try parseArith <|> try parseCall <|> parseNumLit <|> parseVar)
+parseTerm = located $ 
+      try parseLet 
+  <|> try parseIf
+  <|> try parseComp
+  <|> try parseArith 
+  <|> parseCall 
+  <|> parseBoolLit
+  <|> parseNumLit 
+  <|> parseVar
+
 
 
 --
@@ -89,8 +121,11 @@ parseTerm = located (try parseLet <|> try parseArith <|> try parseCall <|> parse
 parseNumber :: Parser Type
 parseNumber = "int" `into` Number
 
+parseBoolean :: Parser Type
+parseBoolean = "bool" `into` Boolean
+
 parseType :: Parser Type
-parseType = parseNumber
+parseType = parseNumber <|> parseBoolean
 
 
 -- 
@@ -168,12 +203,21 @@ parseRawNumber = lexeme $ do
   chars <- some numberChar
   pure (read chars)
 
-parseOp :: Parser Op
-parseOp = 
+parseAOp :: Parser AOp
+parseAOp = 
       "+" `into` Add 
   <|> "-" `into` Sub 
   <|> "*" `into` Mul 
   <|> "/" `into` Div
+
+parseCOp :: Parser COp
+parseCOp = 
+      "="  `into` Eq
+  <|> "/=" `into` NEq
+  <|> "<=" `into` LtE
+  <|> "<"  `into` Lt
+  <|> ">=" `into` GtE
+  <|> ">"  `into` Gt
 
 
 -- 

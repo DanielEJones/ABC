@@ -15,12 +15,18 @@ data Term
   | Call Name [Term]
   | Var Ix
 
+  | BoolLit Bool
+  | If Type Term Term Term
+
   | NumLit Int
-  | Arith Op Term Term
+  | Arith AOp Term Term
+
+  | Comp COp Term Term
   deriving Show
 
 data Type
   = Number
+  | Boolean
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -52,12 +58,25 @@ infer ctx tm = case tm of
     Just (ix, a) -> pure (Var ix, a) 
     Nothing -> err ctx (UnboundVar n)
 
+  S.BoolLit b -> pure (BoolLit b, Boolean)
+
+  S.If v t u -> do
+    vtm <- check ctx v Boolean
+    (ttm, a) <- infer ctx t
+    utm <- check ctx u a
+    pure (If a vtm ttm utm, a)
+
   S.NumLit i -> pure (NumLit i, Number)
 
   S.Arith o t u -> do
     ttm <- check ctx t Number
     utm <- check ctx u Number
     pure (Arith o ttm utm, Number)
+
+  S.Comp o t u -> do
+    ttm <- check ctx t Number
+    utm <- check ctx u Number
+    pure (Comp o ttm utm, Boolean)
 
   S.Let{} -> err ctx (UnInferable "let binding")
 
@@ -81,6 +100,7 @@ checkType :: Context -> S.Type -> Elab Type
 checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
+  S.Boolean -> pure Boolean
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of

@@ -10,7 +10,10 @@ import Text.Megaparsec (SourcePos (SourcePos), mkPos)
 type Name = String
 type Ix = Int
 
-data Op = Add | Sub | Mul | Div
+data AOp = Add | Sub | Mul | Div
+  deriving Show
+
+data COp = Eq | NEq | Lt | LtE | Gt | GtE 
   deriving Show
 
 data Ident = Ident FilePath Name
