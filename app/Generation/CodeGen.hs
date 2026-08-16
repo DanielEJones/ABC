@@ -49,9 +49,11 @@ mangleName :: Name -> Name
 mangleName = concatMap fix
   where
     fix ch
-      | isAlpha ch || ch == '_' = [ch]
+      | isValid ch = [ch]
       | otherwise = "_" ++ show (fromEnum ch) ++ "_"
-    isAlpha c = 
+
+    isValid c = 
          'a' <= c && c <= 'z' 
       || 'A' <= c && c <= 'Z'
+      || '_' == c
 

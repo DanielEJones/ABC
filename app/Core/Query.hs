@@ -96,6 +96,7 @@ liftQuery q = do
 data Error
   = ParseError Sf.Error
   | TypeError  Sn.Error
+  | NameError  Name
   deriving Show
 
 liftErr' :: (e -> Error) -> Either e a -> Query (Either Error a)

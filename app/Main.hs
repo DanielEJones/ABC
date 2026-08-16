@@ -2,6 +2,7 @@ module Main (main) where
 
 import Control.Monad (forM, forM_)
 import Control.Monad.Trans (liftIO)
+import Control.Monad.Except (throwError)
 
 import Text.Megaparsec (errorBundlePretty)
 import System.Process (readProcessWithExitCode)
@@ -39,7 +40,7 @@ fetchSignature :: Ident -> Query (Either Error Sn.Sig)
 fetchSignature ident@(Ident path name) = cachedFallible dbSigs ident $ do
   decls <- liftQuery (fetchParsed path)
   case findName name decls of
-    Nothing -> undefined
+    Nothing -> throwError (NameError name)
     Just decl -> do 
       let sig = checkSig (emptyContext $ mkLoc path 0 0 ) decl
       liftErr TypeError sig
@@ -48,7 +49,7 @@ fetchBody :: Ident -> Query (Either Error Sf.Term)
 fetchBody ident@(Ident path name) = cachedFallible dbDefs ident $ do
   decls <- liftQuery (fetchParsed path)
   case findName name decls of
-    Nothing -> undefined
+    Nothing -> throwError (NameError name)
     Just decl -> pure (getTerm decl)
 
 fetchContext :: FilePath -> Query (Either Error Sn.Context)
@@ -117,6 +118,7 @@ main = do
       Left e -> case e of
         ParseError pErr -> putStrLn (errorBundlePretty pErr)
         TypeError  tErr -> putStrLn (show tErr)
+        NameError  nErr -> putStrLn ("Can't Find '" ++ nErr ++ "'.")
 
 
 compileAndRun :: String -> IO ()
