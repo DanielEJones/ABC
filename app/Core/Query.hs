@@ -12,20 +12,32 @@ import qualified Frontend.Surface as Sf
 import qualified Frontend.Syntax as Sn
 import qualified Lowering.ANF as Ir
 
+import Core.Common
+
 
 type Store k v = IORef (Map k v)
 
 data Database = Database
-  { dbSource    :: Store FilePath String
-  , dbParsed    :: Store FilePath (Either Error Sf.Term)
-  , dbChecked   :: Store FilePath (Either Error Sn.Term)
-  , dbLowered   :: Store FilePath (Either Error Ir.Term)
-  , dbGenerated :: Store FilePath (Either Error String)
+  { dbSource   :: Store FilePath String
+  , dbParsed   :: Store FilePath (Either Error [Sf.Decl])
+  , dbCtx      :: Store FilePath (Either Error Sn.Context)
+  , dbSigs     :: Store Ident (Either Error Sn.Sig)
+  , dbDefs     :: Store Ident (Either Error Sf.Term)
+  , dbChecked  :: Store Ident (Either Error Sn.Term)
+  , dbLowered  :: Store Ident (Either Error Ir.Decl)
+  , dbCodeGen  :: Store Ident (Either Error String)
+  , dbProtoGen :: Store Ident (Either Error String)
+  , dbCompiled :: Store FilePath (Either Error String)
   }
 
 emptyDatabase :: IO Database
 emptyDatabase = Database
   <$> newIORef Map.empty
+  <*> newIORef Map.empty
+  <*> newIORef Map.empty
+  <*> newIORef Map.empty
+  <*> newIORef Map.empty
+  <*> newIORef Map.empty
   <*> newIORef Map.empty
   <*> newIORef Map.empty
   <*> newIORef Map.empty
@@ -84,6 +96,7 @@ liftQuery q = do
 data Error
   = ParseError Sf.Error
   | TypeError  Sn.Error
+  | NameError  Name
   deriving Show
 
 liftErr' :: (e -> Error) -> Either e a -> Query (Either Error a)

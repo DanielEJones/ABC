@@ -3,7 +3,7 @@ module Lowering.ANF where
 import Core.Common
 
 import qualified Frontend.Syntax as S
-import Frontend.Syntax hiding (Term(..), Context, emptyContext)
+import Frontend.Syntax hiding (Term(..), Context, emptyContext, bindLocal, bindGlobal)
 
 import Control.Monad.State
 
@@ -12,6 +12,10 @@ import Control.Monad.State
 -- Lowering Datatypes
 --
 
+data Decl
+  = Fn Name [(Name, Type)] Type Term
+  deriving Show
+
 data Term 
   = Let Name Type Expr Term 
   | Ret Val
@@ -19,6 +23,7 @@ data Term
 
 data Expr
   = Arith Op Val Val
+  | Call Name [Val]
   deriving Show
 
 data Val
@@ -31,8 +36,14 @@ data Val
 -- Lowering Entry
 --
 
-lower :: S.Term -> Term
-lower tm = evalState (normalize emptyContext tm ret) 0
+lower :: S.Context -> S.Term -> Sig -> Decl
+lower ctx tm (Sig n ps r) = do
+  let anfCtx = Context [] (ctxGlob ctx)
+  let fnCtx = foldl' (\c (p, _) -> bindLocal (Var p) c) anfCtx ps
+  Fn n ps r (lowerTerm fnCtx tm)
+
+lowerTerm :: Context -> S.Term -> Term
+lowerTerm ctx tm = evalState (normalize ctx tm ret) 0
 
 
 -- 
@@ -43,9 +54,14 @@ normalize :: Context -> S.Term -> (Val -> ANF Term) -> ANF Term
 normalize ctx tm k = case tm of
   S.Let _ _ v u -> 
     normalize ctx v $ \v' ->
-      normalize (bind v' ctx) u k
+      normalize (bindLocal v' ctx) u k
 
-  S.Var i -> k (getBound i ctx)
+  S.Call f ts -> 
+    normalizeList ctx ts $ \ts' -> do
+      n <- fresh
+      Let n (getRetType f ctx) (Call f ts') <$> k (Var n)
+
+  S.Var i -> k (getLocal i ctx)
   
   S.NumLit i -> k (NumLit i)
 
@@ -55,6 +71,12 @@ normalize ctx tm k = case tm of
         n <- fresh
         Let n Number (Arith o t' u') <$> k (Var n)
 
+normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
+normalizeList _ [] k = k []
+normalizeList ctx (t:ts) k = 
+  normalizeList ctx ts $ \ts' -> 
+    normalize ctx t $ \t' ->
+      k (t' : ts')
 
 -- 
 -- ANF Monad
@@ -76,15 +98,27 @@ ret = pure . Ret
 --
 
 data Context = Context
-  { ctxBound :: [Val]
+  { ctxBound  :: [Val]
+  , ctxGlobal :: [Sig]
   }
 
 emptyContext :: Context
-emptyContext = Context []
+emptyContext = Context [] []
 
-bind :: Val -> Context -> Context
-bind v ctx = ctx{ ctxBound = v : ctxBound ctx }
+bindLocal :: Val -> Context -> Context
+bindLocal v ctx = ctx{ ctxBound = v : ctxBound ctx }
 
-getBound :: Ix -> Context -> Val
-getBound ix ctx = ctxBound ctx !! ix
+getLocal :: Ix -> Context -> Val
+getLocal ix ctx = ctxBound ctx !! ix
+
+bindGlobal :: Sig -> Context -> Context
+bindGlobal s ctx = ctx{ ctxGlobal = s : ctxGlobal ctx }
+
+getGlobal :: Name -> Context -> Sig
+getGlobal n ctx = case findName n (ctxGlobal ctx) of
+  Nothing -> error "Terms should be well scoped"
+  Just sig -> sig
+
+getRetType :: Name -> Context -> Type
+getRetType n ctx = sigReturn (getGlobal n ctx)
 
