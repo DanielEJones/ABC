@@ -113,7 +113,7 @@ main = do
   forM_ (optFiles options) $ \filePath -> do
     tree <- runQuery (fetchCompiled filePath) db
     case tree of
-      Right a -> compileAndRun a
+      Right a -> do putStrLn a; compileAndRun a
       Left e -> case e of
         ParseError pErr -> putStrLn (errorBundlePretty pErr)
         TypeError  tErr -> putStrLn (show tErr)
