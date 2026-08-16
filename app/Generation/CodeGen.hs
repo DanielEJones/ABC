@@ -13,7 +13,7 @@ emitSig (Sig n ps r) = emitType r ++ " abc_" ++ mangleName n ++ "(" ++ emitParam
 emitDecl :: Decl -> String
 emitDecl (Fn n ps r t) = unlines
   [ emitType r ++ " abc_" ++ mangleName n ++ "(" ++ emitParams ps ++ ") {"
-  , emitTerm t
+  , emitTerm 1 t
   , "}"
   ]
 
@@ -23,11 +23,20 @@ emitParams = intercalate ", " . map emitParam
 emitParam :: (Name, Type) -> String
 emitParam (n, t) = emitType t ++ " " ++ n
 
-emitTerm :: Term -> String
-emitTerm (Let n t e k)       = "  " ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" ++ emitTerm k
-emitTerm (LetIf n t v l r k) = "  " ++ emitType t ++ " " ++ n ++ ";\n" ++ "  if (" ++ emitVal v ++ ") {\n" ++ emitTerm l ++ "\n  } else {\n" ++ emitTerm r ++ "\n  }\n" ++ emitTerm k
-emitTerm (Assign n v)  = "  " ++ n ++ " = " ++ emitVal v ++ ";"
-emitTerm (Ret v)       = "  return " ++ emitVal v ++ ";"
+emitTerm :: Int -> Term -> String
+emitTerm depth (Let n t e k) = 
+     indent depth ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" 
+  ++ emitTerm depth k
+emitTerm depth (LetIf n t v l r k) = 
+     indent depth ++ emitType t ++ " " ++ n ++ ";\n" 
+  ++ indent depth ++ "if (" ++ emitVal v ++ ") {\n" 
+  ++ emitTerm (depth + 1) l ++ "\n" 
+  ++ indent depth ++ "} else {\n" 
+  ++ emitTerm (depth + 1) r ++ "\n" 
+  ++ indent depth ++ "}\n" 
+  ++ emitTerm depth k
+emitTerm depth (Assign n v) = indent depth ++ n ++ " = " ++ emitVal v ++ ";"
+emitTerm depth (Ret v) = indent depth ++ "return " ++ emitVal v ++ ";"
 
 emitExpr :: Expr -> String
 emitExpr (Arith o l r) = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
@@ -70,4 +79,8 @@ mangleName = concatMap fix
          'a' <= c && c <= 'z' 
       || 'A' <= c && c <= 'Z'
       || '_' == c
+
+indent :: Int -> String
+indent 0     = ""
+indent depth = "  " ++ indent (depth - 1)
 
