@@ -47,6 +47,12 @@ infer :: Context -> S.Term -> Elab (Term, Type)
 infer ctx tm = case tm of
   S.TmLoc l t -> infer (withLoc l ctx) t
 
+  S.Let n t v u -> do
+    ct <- checkType ctx t
+    vtm <- check ctx v ct
+    (utm, a) <- infer ctx u
+    pure (Let n ct vtm utm, a)
+
   S.Call n ts -> case findGlobal n ctx of
     Nothing -> err ctx (UnboundFn n)
     Just (Sig _ ps r) -> do
@@ -78,8 +84,6 @@ infer ctx tm = case tm of
     utm <- check ctx u Number
     pure (Comp o ttm utm, Boolean)
 
-  S.Let{} -> err ctx (UnInferable "let binding")
-
 check :: Context -> S.Term -> Type -> Elab Term
 check ctx tm ty = case (tm, ty) of
   (S.TmLoc l t, a) -> check (withLoc l ctx) t a
@@ -89,6 +93,12 @@ check ctx tm ty = case (tm, ty) of
     utm <- check ctx u ct
     vtm <- check (bindLocal n ct ctx) v a
     pure (Let n ct utm vtm)
+
+  (S.If v t u, a) -> do
+    vtm <- check ctx v Boolean
+    ttm <- check ctx t a
+    utm <- check ctx u a
+    pure (If a vtm ttm utm)
 
   (t, a) -> do
     (ttm, tty) <- infer ctx t
