@@ -16,6 +16,9 @@ data AOp = Add | Sub | Mul | Div
 data COp = Eq | NEq | Lt | LtE | Gt | GtE 
   deriving Show
 
+data LOp = And | Or
+  deriving Show
+
 data Ident = Ident FilePath Name
   deriving (Show, Eq, Ord)
 

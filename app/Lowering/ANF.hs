@@ -26,6 +26,7 @@ data Term
 data Expr
   = Arith AOp Val Val
   | Comp COp Val Val
+  | Logic LOp Val Val
   | Call Name [Val]
   deriving Show
 
@@ -89,6 +90,12 @@ normalize ctx tm k = case tm of
       normalize ctx u $ \u' -> do
         n <- fresh
         Let n Boolean (Comp o t' u') <$> k (Var n)
+
+  S.Logic o t u -> 
+    normalize ctx t $ \t' ->
+      normalize ctx u $ \u' -> do
+        n <- fresh
+        Let n Boolean (Logic o t' u') <$> k (Var n)
 
 
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term

@@ -19,9 +19,10 @@ data Term
   | If Type Term Term Term
 
   | NumLit Int
-  | Arith AOp Term Term
 
+  | Arith AOp Term Term
   | Comp COp Term Term
+  | Logic LOp Term Term
   deriving Show
 
 data Type
@@ -83,6 +84,11 @@ infer ctx tm = case tm of
     ttm <- check ctx t Number
     utm <- check ctx u Number
     pure (Comp o ttm utm, Boolean)
+
+  S.Logic o t u -> do
+    ttm <- check ctx t Boolean
+    utm <- check ctx u Boolean
+    pure (Logic o ttm utm, Boolean)
 
 check :: Context -> S.Term -> Type -> Elab Term
 check ctx tm ty = case (tm, ty) of

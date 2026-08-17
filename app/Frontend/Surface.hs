@@ -30,6 +30,7 @@ data Term
 
   | Arith AOp Term Term
   | Comp COp Term Term
+  | Logic LOp Term Term
   deriving Show
 
 data Type
@@ -101,12 +102,19 @@ parseComp = parens $
        <*> parseTerm
        <*> parseTerm
 
+parseLogic :: Parser Term
+parseLogic = parens $
+  Logic <$> parseLOp
+        <*> parseTerm
+        <*> parseTerm
+
 parseTerm :: Parser Term
 parseTerm = located $ 
       try parseLet 
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
+  <|> try parseLogic 
   <|> parseCall 
   <|> parseBoolLit
   <|> parseNumLit 
@@ -218,6 +226,11 @@ parseCOp =
   <|> "<"  `into` Lt
   <|> ">=" `into` GtE
   <|> ">"  `into` Gt
+
+parseLOp :: Parser LOp
+parseLOp = 
+      "and" `into` And
+  <|> "or"  `into` Or
 
 
 -- 

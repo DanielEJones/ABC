@@ -41,6 +41,7 @@ emitTerm depth (Ret v) = indent depth ++ "return " ++ emitVal v ++ ";"
 emitExpr :: Expr -> String
 emitExpr (Arith o l r) = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
 emitExpr (Comp o l r)  = emitVal l ++ " " ++ emitCOp o ++ " " ++ emitVal r
+emitExpr (Logic o l r) = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
 emitExpr (Call f xs)   = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
 
 emitVal :: Val -> String
@@ -66,6 +67,10 @@ emitCOp Lt  = "<"
 emitCOp LtE = "<="
 emitCOp Gt  = ">"
 emitCOp GtE = ">="
+
+emitLOp :: LOp -> String
+emitLOp And = "&&"
+emitLOp Or  = "||"
 
 
 mangleName :: Name -> Name
