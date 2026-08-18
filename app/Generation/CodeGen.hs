@@ -13,7 +13,7 @@ emitSig (Sig n ps r) = emitType r ++ " abc_" ++ mangleName n ++ "(" ++ emitParam
 emitDecl :: Decl -> String
 emitDecl (Fn n ps r t) = unlines
   [ emitType r ++ " abc_" ++ mangleName n ++ "(" ++ emitParams ps ++ ") {"
-  , emitTerm t
+  , emitTerm 1 t
   , "}"
   ]
 
@@ -23,26 +23,54 @@ emitParams = intercalate ", " . map emitParam
 emitParam :: (Name, Type) -> String
 emitParam (n, t) = emitType t ++ " " ++ n
 
-emitTerm :: Term -> String
-emitTerm (Let n t e k) = "  " ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" ++ emitTerm k
-emitTerm (Ret v)       = "  return " ++ emitVal v ++ ";"
+emitTerm :: Int -> Term -> String
+emitTerm depth (Let n t e k) = 
+     indent depth ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" 
+  ++ emitTerm depth k
+emitTerm depth (LetIf n t v l r k) = 
+     indent depth ++ emitType t ++ " " ++ n ++ ";\n" 
+  ++ indent depth ++ "if (" ++ emitVal v ++ ") {\n" 
+  ++ emitTerm (depth + 1) l ++ "\n" 
+  ++ indent depth ++ "} else {\n" 
+  ++ emitTerm (depth + 1) r ++ "\n" 
+  ++ indent depth ++ "}\n" 
+  ++ emitTerm depth k
+emitTerm depth (Assign n v) = indent depth ++ n ++ " = " ++ emitVal v ++ ";"
+emitTerm depth (Ret v) = indent depth ++ "return " ++ emitVal v ++ ";"
 
 emitExpr :: Expr -> String
-emitExpr (Arith o l r) = emitVal l ++ " " ++ emitOp o ++ " " ++ emitVal r
+emitExpr (Arith o l r) = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
+emitExpr (Comp o l r)  = emitVal l ++ " " ++ emitCOp o ++ " " ++ emitVal r
+emitExpr (Logic o l r) = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
 emitExpr (Call f xs)   = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
 
 emitVal :: Val -> String
-emitVal (Var n)    = n
-emitVal (NumLit i) = show i
+emitVal (Var n)         = n
+emitVal (NumLit i)      = show i
+emitVal (BoolLit True)  = "true"
+emitVal (BoolLit False) = "false"
 
 emitType :: Type -> String
 emitType Number = "int"
+emitType Boolean = "bool"
 
-emitOp :: Op -> String
-emitOp Add = "+"
-emitOp Sub = "-"
-emitOp Mul = "*"
-emitOp Div = "/"
+emitAOp :: AOp -> String
+emitAOp Add = "+"
+emitAOp Sub = "-"
+emitAOp Mul = "*"
+emitAOp Div = "/"
+
+emitCOp :: COp -> String
+emitCOp Eq  = "=="
+emitCOp NEq = "!="
+emitCOp Lt  = "<"
+emitCOp LtE = "<="
+emitCOp Gt  = ">"
+emitCOp GtE = ">="
+
+emitLOp :: LOp -> String
+emitLOp And = "&&"
+emitLOp Or  = "||"
 
 
 mangleName :: Name -> Name
@@ -56,4 +84,8 @@ mangleName = concatMap fix
          'a' <= c && c <= 'z' 
       || 'A' <= c && c <= 'Z'
       || '_' == c
+
+indent :: Int -> String
+indent 0     = ""
+indent depth = "  " ++ indent (depth - 1)
 

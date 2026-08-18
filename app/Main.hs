@@ -95,7 +95,8 @@ fetchCompiled path = cachedFallible dbCompiled path $ do
   protos <- forM decls (liftQuery . fetchProto . Ident path . nameOf)
   code <- forM decls (liftQuery . fetchCode . Ident path . nameOf)
   pure $ unlines 
-    [ "#include <stdio.h>\n"
+    [ "#include <stdio.h>"
+    , "#include <stdbool.h>\n"
     , unlines protos
     , unlines code
     , "int main() {"

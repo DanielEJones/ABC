@@ -15,12 +15,19 @@ data Term
   | Call Name [Term]
   | Var Ix
 
+  | BoolLit Bool
+  | If Type Term Term Term
+
   | NumLit Int
-  | Arith Op Term Term
+
+  | Arith AOp Term Term
+  | Comp COp Term Term
+  | Logic LOp Term Term
   deriving Show
 
 data Type
   = Number
+  | Boolean
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -41,6 +48,12 @@ infer :: Context -> S.Term -> Elab (Term, Type)
 infer ctx tm = case tm of
   S.TmLoc l t -> infer (withLoc l ctx) t
 
+  S.Let n t v u -> do
+    ct <- checkType ctx t
+    vtm <- check ctx v ct
+    (utm, a) <- infer ctx u
+    pure (Let n ct vtm utm, a)
+
   S.Call n ts -> case findGlobal n ctx of
     Nothing -> err ctx (UnboundFn n)
     Just (Sig _ ps r) -> do
@@ -52,6 +65,14 @@ infer ctx tm = case tm of
     Just (ix, a) -> pure (Var ix, a) 
     Nothing -> err ctx (UnboundVar n)
 
+  S.BoolLit b -> pure (BoolLit b, Boolean)
+
+  S.If v t u -> do
+    vtm <- check ctx v Boolean
+    (ttm, a) <- infer ctx t
+    utm <- check ctx u a
+    pure (If a vtm ttm utm, a)
+
   S.NumLit i -> pure (NumLit i, Number)
 
   S.Arith o t u -> do
@@ -59,7 +80,15 @@ infer ctx tm = case tm of
     utm <- check ctx u Number
     pure (Arith o ttm utm, Number)
 
-  S.Let{} -> err ctx (UnInferable "let binding")
+  S.Comp o t u -> do
+    ttm <- check ctx t Number
+    utm <- check ctx u Number
+    pure (Comp o ttm utm, Boolean)
+
+  S.Logic o t u -> do
+    ttm <- check ctx t Boolean
+    utm <- check ctx u Boolean
+    pure (Logic o ttm utm, Boolean)
 
 check :: Context -> S.Term -> Type -> Elab Term
 check ctx tm ty = case (tm, ty) of
@@ -71,6 +100,12 @@ check ctx tm ty = case (tm, ty) of
     vtm <- check (bindLocal n ct ctx) v a
     pure (Let n ct utm vtm)
 
+  (S.If v t u, a) -> do
+    vtm <- check ctx v Boolean
+    ttm <- check ctx t a
+    utm <- check ctx u a
+    pure (If a vtm ttm utm)
+
   (t, a) -> do
     (ttm, tty) <- infer ctx t
     if tty /= a
@@ -81,6 +116,7 @@ checkType :: Context -> S.Type -> Elab Type
 checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
+  S.Boolean -> pure Boolean
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of
