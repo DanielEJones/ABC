@@ -15,6 +15,9 @@ data Term
   | Call Name [Term]
   | Var Ix
 
+  | Pair [Term]
+  | Proj Int Term
+
   | BoolLit Bool
   | If Type Term Term Term
 
@@ -28,6 +31,7 @@ data Term
 data Type
   = Number
   | Boolean
+  | Prod [Type]
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -65,6 +69,14 @@ infer ctx tm = case tm of
     Just (ix, a) -> pure (Var ix, a) 
     Nothing -> err ctx (UnboundVar n)
 
+  S.Pair{} -> err ctx (UnInferable "Pair must be checked.")
+
+  S.Proj n t -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Prod ts -> pure (Proj n ttm, ts !! n)
+      _       -> err ctx (CannotPerfomOn "projection" "non-product type")
+
   S.BoolLit b -> pure (BoolLit b, Boolean)
 
   S.If v t u -> do
@@ -100,6 +112,13 @@ check ctx tm ty = case (tm, ty) of
     vtm <- check (bindLocal n ct ctx) v a
     pure (Let n ct utm vtm)
 
+  (S.Pair ts, Prod as) -> do
+    when (length ts /= length as) (err ctx $ ArgumentMismatch "pair" (length as) (length ts))
+    cts <- zipWithM (check ctx) ts as
+    pure (Pair cts)
+
+  (S.Pair{}, a) -> err ctx (TypeMismatch (Prod []) a)
+
   (S.If v t u, a) -> do
     vtm <- check ctx v Boolean
     ttm <- check ctx t a
@@ -117,6 +136,7 @@ checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
   S.Boolean -> pure Boolean
+  S.Prod ts -> Prod <$> mapM (checkType ctx) ts
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of
@@ -150,6 +170,7 @@ data Error'
   | UnboundFn Name
   | TypeMismatch Type Type
   | ArgumentMismatch Name Int Int
+  | CannotPerfomOn String String
   deriving Show
 
 

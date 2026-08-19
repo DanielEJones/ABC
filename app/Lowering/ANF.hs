@@ -28,10 +28,12 @@ data Expr
   | Comp COp Val Val
   | Logic LOp Val Val
   | Call Name [Val]
+  | Pair [Val]
+  | Proj Int Val
   deriving Show
 
 data Val
-  = Var Name
+  = Var Name Type
   | NumLit Int
   | BoolLit Bool
   deriving Show
@@ -44,7 +46,7 @@ data Val
 lower :: S.Context -> S.Term -> Sig -> Decl
 lower ctx tm (Sig n ps r) = do
   let anfCtx = Context [] (ctxGlob ctx)
-  let fnCtx = foldl' (\c (p, _) -> bindLocal (Var p) c) anfCtx ps
+  let fnCtx = foldl' (\c (p, t) -> bindLocal (Var p t) c) anfCtx ps
   Fn n ps r (lowerTerm fnCtx tm)
 
 lowerTerm :: Context -> S.Term -> Term
@@ -64,9 +66,22 @@ normalize ctx tm k = case tm of
   S.Call f ts -> 
     normalizeList ctx ts $ \ts' -> do
       n <- fresh
-      Let n (getRetType f ctx) (Call f ts') <$> k (Var n)
+      let ty = getRetType f ctx 
+      Let n ty (Call f ts') <$> k (Var n ty)
 
   S.Var i -> k (getLocal i ctx)
+
+  S.Pair ts -> 
+    normalizeList ctx ts $ \ts' -> do
+      n <- fresh
+      let ty = Prod (map typeOf ts')
+      Let n ty (Pair ts') <$> k (Var n ty)
+
+  S.Proj i t -> 
+    normalize ctx t $ \t' -> do
+      n <- fresh 
+      let ty = projType t' i
+      Let n ty (Proj i t') <$> k (Var n ty)
 
   S.BoolLit b -> k (BoolLit b)
 
@@ -75,7 +90,7 @@ normalize ctx tm k = case tm of
       n <- fresh
       t' <- normalize ctx t (pure . Assign n)
       u' <- normalize ctx u (pure . Assign n)
-      LetIf n a v' t' u' <$> k (Var n)
+      LetIf n a v' t' u' <$> k (Var n a)
 
   S.NumLit i -> k (NumLit i)
 
@@ -83,19 +98,19 @@ normalize ctx tm k = case tm of
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' -> do
         n <- fresh
-        Let n Number (Arith o t' u') <$> k (Var n)
+        Let n Number (Arith o t' u') <$> k (Var n Number)
 
   S.Comp o t u -> 
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' -> do
         n <- fresh
-        Let n Boolean (Comp o t' u') <$> k (Var n)
+        Let n Boolean (Comp o t' u') <$> k (Var n Boolean)
 
   S.Logic o t u -> 
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' -> do
         n <- fresh
-        Let n Boolean (Logic o t' u') <$> k (Var n)
+        Let n Boolean (Logic o t' u') <$> k (Var n Boolean)
 
 
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
@@ -150,3 +165,17 @@ getGlobal n ctx = case findName n (ctxGlobal ctx) of
 getRetType :: Name -> Context -> Type
 getRetType n ctx = sigReturn (getGlobal n ctx)
 
+
+-- 
+-- Helpers
+--
+
+typeOf :: Val -> Type
+typeOf (Var _ t)   = t
+typeOf (NumLit _)  = Number
+typeOf (BoolLit _) = Boolean
+
+projType :: Val -> Int -> Type
+projType (Var _ (Prod ts)) i = ts !! i
+projType _                 _ = error "Terms should be well typed"
+  

@@ -97,6 +97,7 @@ fetchCompiled path = cachedFallible dbCompiled path $ do
   pure $ unlines 
     [ "#include <stdio.h>"
     , "#include <stdbool.h>\n"
+    , "typedef struct { int _0; int _1; } prod_int_int_end;\n"
     , unlines protos
     , unlines code
     , "int main() {"

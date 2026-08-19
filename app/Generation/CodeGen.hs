@@ -23,6 +23,12 @@ emitParams = intercalate ", " . map emitParam
 emitParam :: (Name, Type) -> String
 emitParam (n, t) = emitType t ++ " " ++ n
 
+emitStructFields :: [Val] -> String
+emitStructFields xs = intercalate ", " (zipWith emitStructField xs [0..])
+
+emitStructField :: Val -> Int -> String
+emitStructField v i = "._" ++ show i ++ " = " ++ emitVal v
+
 emitTerm :: Int -> Term -> String
 emitTerm depth (Let n t e k) = 
      indent depth ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" 
@@ -43,9 +49,11 @@ emitExpr (Arith o l r) = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
 emitExpr (Comp o l r)  = emitVal l ++ " " ++ emitCOp o ++ " " ++ emitVal r
 emitExpr (Logic o l r) = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
 emitExpr (Call f xs)   = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
+emitExpr (Pair xs)  = "{ " ++ emitStructFields xs ++ " }"
+emitExpr (Proj i v)    = emitVal v ++ "._" ++ show i
 
 emitVal :: Val -> String
-emitVal (Var n)         = n
+emitVal (Var n _)       = n
 emitVal (NumLit i)      = show i
 emitVal (BoolLit True)  = "true"
 emitVal (BoolLit False) = "false"
@@ -53,6 +61,7 @@ emitVal (BoolLit False) = "false"
 emitType :: Type -> String
 emitType Number = "int"
 emitType Boolean = "bool"
+emitType (Prod ts) = "prod_" ++ intercalate "_" (map emitType ts) ++ "_end"
 
 emitAOp :: AOp -> String
 emitAOp Add = "+"
