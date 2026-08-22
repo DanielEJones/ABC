@@ -5,6 +5,7 @@ import Core.Common
 import qualified Frontend.Syntax as S
 import Frontend.Syntax hiding (Term(..), Context, emptyContext, bindLocal, bindGlobal)
 
+import Control.Monad (zipWithM)
 import Control.Monad.State
 
 
@@ -19,6 +20,7 @@ data Decl
 data Term 
   = Let Name Type Expr Term 
   | LetIf Name Type Val Term Term Term
+  | LetMatch Name Type Val [Term] Term
   | Assign Name Val
   | Ret Val
   deriving Show
@@ -30,6 +32,8 @@ data Expr
   | Call Name [Val]
   | Pair [Val]
   | Proj Int Val
+  | Inj Int Val
+  | Cast Int Val
   deriving Show
 
 data Val
@@ -48,7 +52,7 @@ lower ctx tm (Sig n ps r) =
   let anfCtx = Context [] (ctxGlob ctx)
       fnCtx = foldl' (\c (p, ty) -> bindLocal (Var p ty) c) anfCtx ps
       (t, s) = lowerTerm fnCtx tm
-  in (Fn n ps r t, s)
+  in (Fn n ps r t, concatMap (getTypesOf . snd) ps ++ s)
 
 lowerTerm :: Context -> S.Term -> (Term, [Type])
 lowerTerm ctx tm = 
@@ -69,25 +73,32 @@ normalize ctx tm k = case tm of
   S.Call f ts -> 
     normalizeList ctx ts $ \ts' ->
       letBind (getRetType f ctx) (Call f ts') k
-      -- n <- fresh
-      -- let ty = getRetType f ctx 
-      -- Let n ty (Call f ts') <$> k (Var n ty)
 
   S.Var i -> k (getLocal i ctx)
 
   S.Pair ts -> 
     normalizeList ctx ts $ \ts' ->
       letBind (Prod $ map typeOf ts') (Pair ts') k
-      -- n <- fresh
-      -- let ty = Prod (map typeOf ts')
-      -- Let n ty (Pair ts') <$> k (Var n ty)
 
   S.Proj i t -> 
     normalize ctx t $ \t' ->
       letBind (projType t' i) (Proj i t') k
-      -- n <- fresh 
-      -- let ty = projType t' i
-      -- Let n ty (Proj i t') <$> k (Var n ty)
+
+  S.Inj a i t -> 
+    normalize ctx t $ \t' ->
+      letBind a (Inj i t') k
+
+  S.Match a v bs ->
+    normalize ctx v $ \v' -> do
+      registerType a
+      n <- fresh
+
+      let doBranch :: (Name, S.Term) -> Int -> ANF Term
+          doBranch (b, t) i = Let b (injType v' i) (Cast i v') <$> normalize (bindLocal (Var b $ injType v' i) ctx) t (pure . Assign n)
+
+      bs' <- zipWithM doBranch bs [0..]
+
+      LetMatch n a v' bs' <$> k (Var n a)
 
   S.BoolLit b -> k (BoolLit b)
 
@@ -105,22 +116,16 @@ normalize ctx tm k = case tm of
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' ->
         letBind Number (Arith o t' u') k
-        -- n <- fresh
-        -- Let n Number (Arith o t' u') <$> k (Var n Number)
 
   S.Comp o t u -> 
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' ->
         letBind Boolean (Comp o t' u') k
-        -- n <- fresh
-        -- Let n Boolean (Comp o t' u') <$> k (Var n Boolean)
 
   S.Logic o t u -> 
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' ->
         letBind Boolean (Logic o t' u') k
-        -- n <- fresh
-        -- Let n Boolean (Logic o t' u') <$> k (Var n Boolean)
 
 
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
@@ -157,10 +162,23 @@ letBind ty e k = do
   Let n ty e <$> k (Var n ty)
 
 registerType :: Type -> ANF ()
-registerType t@(Prod ts) = do 
-  mapM_ registerType ts 
-  modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
-registerType _ = pure ()
+registerType t = modify $ \s -> s
+  { loweredTypes = loweredTypes s ++ getTypesOf t 
+  }
+
+-- registerType t@(Prod ts) = do 
+--   mapM_ registerType ts 
+--   modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
+-- registerType t@(Sum ts) = do
+--   mapM_ registerType ts
+--   modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
+-- registerType _ = pure ()
+
+getTypesOf :: Type -> [Type]
+getTypesOf t@(Prod ts) = concatMap getTypesOf ts ++ [t]
+getTypesOf t@(Sum ts)  = concatMap getTypesOf ts ++ [t]
+getTypesOf _           = []
+
 
 --
 -- Context
@@ -205,3 +223,7 @@ projType :: Val -> Int -> Type
 projType (Var _ (Prod ts)) i = ts !! i
 projType _                 _ = error "Terms should be well typed"
   
+injType :: Val -> Int -> Type
+injType (Var _ (Sum ts)) i = ts !! i
+injType _                _ = error "Terms should be well typed"
+

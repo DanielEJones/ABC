@@ -26,6 +26,9 @@ data Term
   | Pair [Term]
   | Proj Int Term
 
+  | Inj Int Term
+  | Match Term [(Name, Term)]
+
   | BoolLit Bool
   | If Term Term Term
 
@@ -41,6 +44,7 @@ data Type
   | Number
   | Boolean
   | Prod [Type]
+  | Sum [Type]
   deriving Show
   
 
@@ -89,6 +93,16 @@ parseProj = parens . into' "project" $
   Proj <$> parseRawNumber
        <*> parseTerm
 
+parseInj :: Parser Term
+parseInj = parens . into' "inject" $
+  Inj <$> parseRawNumber
+      <*> parseTerm
+
+parseMatch :: Parser Term
+parseMatch = parens . into' "match" $
+  Match <$> parseTerm
+        <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
+
 parseBoolLit :: Parser Term
 parseBoolLit = 
       "true"  `into` BoolLit True
@@ -126,6 +140,8 @@ parseTerm = located $
       try parseLet 
   <|> try parsePair
   <|> try parseProj
+  <|> try parseInj
+  <|> try parseMatch
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
@@ -151,8 +167,12 @@ parseProd :: Parser Type
 parseProd = parens . into' "&" $ 
   Prod <$> many parseType
 
+parseSum :: Parser Type
+parseSum = parens . into' "|" $
+  Sum <$> many parseType
+
 parseType :: Parser Type
-parseType = located $ parseNumber <|> parseBoolean <|> parseProd
+parseType = located $ parseNumber <|> parseBoolean <|> try parseProd <|> parseSum
 
 
 -- 
