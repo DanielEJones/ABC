@@ -3,6 +3,7 @@ module Main (main) where
 import Control.Monad (forM, forM_)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Except (throwError)
+import Data.List (nub)
 
 import Text.Megaparsec (errorBundlePretty)
 import System.Process (readProcessWithExitCode)
@@ -69,7 +70,7 @@ fetchChecked ident@(Ident path _) = cachedFallible dbChecked ident $ do
   let checked = checkDecl ctx body sig 
   liftErr TypeError checked
 
-fetchANF :: Ident -> Query (Either Error Ir.Decl)
+fetchANF :: Ident -> Query (Either Error (Ir.Decl, [Sn.Type]))
 fetchANF ident@(Ident path _) = cachedFallible dbLowered ident $ do
   checked <- liftQuery (fetchChecked ident)
   signature <- liftQuery (fetchSignature ident)
@@ -79,7 +80,7 @@ fetchANF ident@(Ident path _) = cachedFallible dbLowered ident $ do
 
 fetchCode :: Ident -> Query (Either Error String)
 fetchCode ident = cachedFallible dbCodeGen ident $ do
-  lowered <- liftQuery (fetchANF ident)
+  (lowered, _) <- liftQuery (fetchANF ident)
   let generated = emitDecl lowered
   pure generated
 
@@ -89,15 +90,22 @@ fetchProto ident = cachedFallible dbProtoGen ident $ do
   let generated = emitSig sig
   pure generated
 
+fetchTypes :: Ident -> Query (Either Error [String])
+fetchTypes ident = cachedFallible dbTypes ident $ do
+  (_, types) <- liftQuery (fetchANF ident)
+  pure (map emitTypeDef types)
+
 fetchCompiled :: FilePath -> Query (Either Error String)
 fetchCompiled path = cachedFallible dbCompiled path $ do
   decls <- liftQuery (fetchParsed path)
+  types <- forM decls (liftQuery . fetchTypes . Ident path . nameOf)
+  let uniqueTypes = nub (concat types)
   protos <- forM decls (liftQuery . fetchProto . Ident path . nameOf)
   code <- forM decls (liftQuery . fetchCode . Ident path . nameOf)
   pure $ unlines 
     [ "#include <stdio.h>"
     , "#include <stdbool.h>\n"
-    , "typedef struct { int _0; int _1; } prod_int_int_end;\n"
+    , unlines uniqueTypes
     , unlines protos
     , unlines code
     , "int main() {"

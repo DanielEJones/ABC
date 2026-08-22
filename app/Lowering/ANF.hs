@@ -43,14 +43,17 @@ data Val
 -- Lowering Entry
 --
 
-lower :: S.Context -> S.Term -> Sig -> Decl
-lower ctx tm (Sig n ps r) = do
+lower :: S.Context -> S.Term -> Sig -> (Decl, [Type])
+lower ctx tm (Sig n ps r) = 
   let anfCtx = Context [] (ctxGlob ctx)
-  let fnCtx = foldl' (\c (p, t) -> bindLocal (Var p t) c) anfCtx ps
-  Fn n ps r (lowerTerm fnCtx tm)
+      fnCtx = foldl' (\c (p, ty) -> bindLocal (Var p ty) c) anfCtx ps
+      (t, s) = lowerTerm fnCtx tm
+  in (Fn n ps r t, s)
 
-lowerTerm :: Context -> S.Term -> Term
-lowerTerm ctx tm = evalState (normalize ctx tm ret) 0
+lowerTerm :: Context -> S.Term -> (Term, [Type])
+lowerTerm ctx tm = 
+  let (t, s) = runState (normalize ctx tm ret) (LoweringState 0 [])
+  in (t, loweredTypes s)
 
 
 -- 
@@ -64,29 +67,33 @@ normalize ctx tm k = case tm of
       normalize (bindLocal v' ctx) u k
 
   S.Call f ts -> 
-    normalizeList ctx ts $ \ts' -> do
-      n <- fresh
-      let ty = getRetType f ctx 
-      Let n ty (Call f ts') <$> k (Var n ty)
+    normalizeList ctx ts $ \ts' ->
+      letBind (getRetType f ctx) (Call f ts') k
+      -- n <- fresh
+      -- let ty = getRetType f ctx 
+      -- Let n ty (Call f ts') <$> k (Var n ty)
 
   S.Var i -> k (getLocal i ctx)
 
   S.Pair ts -> 
-    normalizeList ctx ts $ \ts' -> do
-      n <- fresh
-      let ty = Prod (map typeOf ts')
-      Let n ty (Pair ts') <$> k (Var n ty)
+    normalizeList ctx ts $ \ts' ->
+      letBind (Prod $ map typeOf ts') (Pair ts') k
+      -- n <- fresh
+      -- let ty = Prod (map typeOf ts')
+      -- Let n ty (Pair ts') <$> k (Var n ty)
 
   S.Proj i t -> 
-    normalize ctx t $ \t' -> do
-      n <- fresh 
-      let ty = projType t' i
-      Let n ty (Proj i t') <$> k (Var n ty)
+    normalize ctx t $ \t' ->
+      letBind (projType t' i) (Proj i t') k
+      -- n <- fresh 
+      -- let ty = projType t' i
+      -- Let n ty (Proj i t') <$> k (Var n ty)
 
   S.BoolLit b -> k (BoolLit b)
 
   S.If a v t u -> 
     normalize ctx v $ \v' -> do
+      registerType a
       n <- fresh
       t' <- normalize ctx t (pure . Assign n)
       u' <- normalize ctx u (pure . Assign n)
@@ -96,21 +103,24 @@ normalize ctx tm k = case tm of
 
   S.Arith o t u -> 
     normalize ctx t $ \t' ->
-      normalize ctx u $ \u' -> do
-        n <- fresh
-        Let n Number (Arith o t' u') <$> k (Var n Number)
+      normalize ctx u $ \u' ->
+        letBind Number (Arith o t' u') k
+        -- n <- fresh
+        -- Let n Number (Arith o t' u') <$> k (Var n Number)
 
   S.Comp o t u -> 
     normalize ctx t $ \t' ->
-      normalize ctx u $ \u' -> do
-        n <- fresh
-        Let n Boolean (Comp o t' u') <$> k (Var n Boolean)
+      normalize ctx u $ \u' ->
+        letBind Boolean (Comp o t' u') k
+        -- n <- fresh
+        -- Let n Boolean (Comp o t' u') <$> k (Var n Boolean)
 
   S.Logic o t u -> 
     normalize ctx t $ \t' ->
-      normalize ctx u $ \u' -> do
-        n <- fresh
-        Let n Boolean (Logic o t' u') <$> k (Var n Boolean)
+      normalize ctx u $ \u' ->
+        letBind Boolean (Logic o t' u') k
+        -- n <- fresh
+        -- Let n Boolean (Logic o t' u') <$> k (Var n Boolean)
 
 
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
@@ -125,16 +135,32 @@ normalizeList ctx (t:ts) k =
 -- ANF Monad
 --
 
-type ANF a = State Int a
+type ANF a = State LoweringState a
+
+data LoweringState = LoweringState
+  { loweredCount :: Int
+  , loweredTypes :: [Type]
+  }
 
 fresh :: ANF Name
 fresh = do
-  i <- state $ \s -> (s, s + 1)
+  i <- state $ \s -> (loweredCount s, s{ loweredCount = loweredCount s + 1 })
   pure ("t" ++ show i)
 
 ret :: Val -> ANF Term
 ret = pure . Ret
 
+letBind :: Type -> Expr -> (Val -> ANF Term) -> ANF Term
+letBind ty e k = do
+  registerType ty
+  n <- fresh
+  Let n ty e <$> k (Var n ty)
+
+registerType :: Type -> ANF ()
+registerType t@(Prod ts) = do 
+  mapM_ registerType ts 
+  modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
+registerType _ = pure ()
 
 --
 -- Context

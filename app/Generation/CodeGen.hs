@@ -63,6 +63,16 @@ emitType Number = "int"
 emitType Boolean = "bool"
 emitType (Prod ts) = "prod_" ++ intercalate "_" (map emitType ts) ++ "_end"
 
+emitTypeDef :: Type -> String
+emitTypeDef t@(Prod ts) = "typedef struct { " ++ emitStructFieldTypes ts ++ " } " ++ emitType t ++ ";"
+emitTypeDef _           = error "Not a user defined type"
+
+emitStructFieldTypes :: [Type] -> String
+emitStructFieldTypes ts = intercalate " " (zipWith emitStructFieldType ts [0..])
+
+emitStructFieldType :: Type -> Int -> String
+emitStructFieldType t i = emitType t ++ " _" ++ show i ++ ";" 
+
 emitAOp :: AOp -> String
 emitAOp Add = "+"
 emitAOp Sub = "-"
