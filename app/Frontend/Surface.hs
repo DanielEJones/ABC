@@ -29,6 +29,11 @@ data Term
   | Inj Int Term
   | Match Term [(Name, Term)]
 
+  | ArrayNew Term Term
+  | ArrayGet Term Term
+  | ArraySet Term Term Term
+  | ArrayLen Term
+
   | BoolLit Bool
   | If Term Term Term
 
@@ -45,6 +50,7 @@ data Type
   | Boolean
   | Prod [Type]
   | Sum [Type]
+  | Array Type
   deriving Show
   
 
@@ -103,6 +109,26 @@ parseMatch = parens . into' "match" $
   Match <$> parseTerm
         <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
 
+parseArrayNew :: Parser Term
+parseArrayNew = parens . into' "array-new" $
+  ArrayNew <$> parseTerm
+           <*> parseTerm
+
+parseArrayGet :: Parser Term
+parseArrayGet = parens . into' "array-get" $
+  ArrayGet <$> parseTerm
+           <*> parseTerm
+
+parseArraySet :: Parser Term
+parseArraySet = parens . into' "array-set" $
+  ArraySet <$> parseTerm
+           <*> parseTerm
+           <*> parseTerm
+
+parseArrayLen :: Parser Term
+parseArrayLen = parens . into' "array-len" $
+  ArrayLen <$> parseTerm
+
 parseBoolLit :: Parser Term
 parseBoolLit = 
       "true"  `into` BoolLit True
@@ -142,6 +168,10 @@ parseTerm = located $
   <|> try parseProj
   <|> try parseInj
   <|> try parseMatch
+  <|> try parseArrayNew
+  <|> try parseArrayGet
+  <|> try parseArraySet
+  <|> try parseArrayLen
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
@@ -171,8 +201,17 @@ parseSum :: Parser Type
 parseSum = parens . into' "|" $
   Sum <$> many parseType
 
+parseArray :: Parser Type
+parseArray = parens . into' "array" $
+  Array <$> parseType
+
 parseType :: Parser Type
-parseType = located $ parseNumber <|> parseBoolean <|> try parseProd <|> parseSum
+parseType = located $ 
+      parseNumber 
+  <|> parseBoolean
+  <|> try parseProd 
+  <|> try parseSum 
+  <|> try parseArray
 
 
 -- 

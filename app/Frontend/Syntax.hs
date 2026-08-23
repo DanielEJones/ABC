@@ -21,6 +21,11 @@ data Term
   | Inj Type Int Term
   | Match Type Term [(Name, Term)]
 
+  | ArrayNew Type Term Term
+  | ArrayGet Term Term
+  | ArraySet Term Term Term
+  | ArrayLen Term
+
   | BoolLit Bool
   | If Type Term Term Term
 
@@ -36,6 +41,7 @@ data Type
   | Boolean
   | Prod [Type]
   | Sum [Type]
+  | Array Type
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -86,6 +92,30 @@ infer ctx tm = case tm of
   S.Inj{} -> err ctx (UnInferable "Inject must be checked.")
 
   S.Match{} -> err ctx (UnInferable "Match must be checked.")
+
+  S.ArrayNew{} -> err ctx (UnInferable "Array construction must be checked.")
+
+  S.ArrayGet t i -> do
+    (ttm, tty) <- infer ctx t
+    itm <- check ctx i Number
+    case tty of
+      Array a -> pure (ArrayGet ttm itm, a)
+      _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
+
+  S.ArraySet t i v -> do
+    (ttm, tty) <- infer ctx t
+    itm <- check ctx i Number
+    case tty of
+      Array a -> do
+        vtm <- check ctx v a
+        pure (ArraySet ttm itm vtm, Array a)
+      _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
+
+  S.ArrayLen t -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Array{} -> pure (ArrayLen ttm, Number)
+      _ -> err ctx (CannotPerfomOn "length" "non-array type")
 
   S.BoolLit b -> pure (BoolLit b, Boolean)
 
@@ -142,6 +172,13 @@ check ctx tm ty = case (tm, ty) of
         pure (Match a ttm cbs)
       _ -> err ctx (CannotPerfomOn "match" "non-sum type")
 
+  (S.ArrayNew l t, Array a) -> do
+    ltm <- check ctx l Number
+    ttm <- check ctx t a
+    pure (ArrayNew (Array a) ltm ttm)
+
+  (S.ArrayNew{}, a) -> err ctx (TypeMismatch (Array a) a)
+
   (S.If v t u, a) -> do
     vtm <- check ctx v Boolean
     ttm <- check ctx t a
@@ -161,6 +198,7 @@ checkType ctx ty = case ty of
   S.Boolean -> pure Boolean
   S.Prod ts -> Prod <$> mapM (checkType ctx) ts
   S.Sum ts -> Sum <$> mapM (checkType ctx) ts
+  S.Array t -> Array <$> checkType ctx t
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of

@@ -21,6 +21,7 @@ data Term
   = Let Name Type Expr Term 
   | LetIf Name Type Val Term Term Term
   | LetMatch Name Type Val [Term] Term
+  | LetArray Name Type Val Val Term
   | Assign Name Val
   | Ret Val
   deriving Show
@@ -33,6 +34,9 @@ data Expr
   | Pair [Val]
   | Proj Int Val
   | Inj Int Val
+  | ArrayGet Val Val
+  | ArraySet Val Val Val
+  | ArrayLen Val
   | Cast Int Val
   deriving Show
 
@@ -99,6 +103,28 @@ normalize ctx tm k = case tm of
       bs' <- zipWithM doBranch bs [0..]
 
       LetMatch n a v' bs' <$> k (Var n a)
+
+  S.ArrayNew a l d -> 
+    normalize ctx l $ \l' -> 
+      normalize ctx d $ \d' -> do
+        registerType a
+        n <- fresh
+        LetArray n a l' d' <$> k (Var n a)
+
+  S.ArrayGet t i -> 
+    normalize ctx t $ \t' ->
+      normalize ctx i $ \i' ->
+        letBind (arrType t') (ArrayGet t' i') k
+
+  S.ArraySet t i v -> 
+    normalize ctx t $ \t' ->
+      normalize ctx i $ \i' ->
+        normalize ctx v $ \v' ->
+          letBind (Array $ arrType t') (ArraySet t' i' v') k
+
+  S.ArrayLen t -> 
+    normalize ctx t $ \t' ->
+      letBind Number (ArrayLen t') k
 
   S.BoolLit b -> k (BoolLit b)
 
@@ -169,6 +195,7 @@ registerType t = modify $ \s -> s
 getTypesOf :: Type -> [Type]
 getTypesOf t@(Prod ts) = concatMap getTypesOf ts ++ [t]
 getTypesOf t@(Sum ts)  = concatMap getTypesOf ts ++ [t]
+getTypesOf t@(Array u) = getTypesOf u ++ [t]
 getTypesOf _           = []
 
 
@@ -213,9 +240,13 @@ typeOf (BoolLit _) = Boolean
 
 projType :: Val -> Int -> Type
 projType (Var _ (Prod ts)) i = ts !! i
-projType _                 _ = error "Terms should be well typed"
+projType _                 _ = error "Terms should be well typed (project)"
   
 injType :: Val -> Int -> Type
 injType (Var _ (Sum ts)) i = ts !! i
-injType _                _ = error "Terms should be well typed"
+injType _                _ = error "Terms should be well typed (inject)"
+
+arrType :: Val -> Type
+arrType (Var _ (Array t)) = t
+arrType _                 = error "Terms should be well typed (array)"
 

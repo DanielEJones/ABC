@@ -51,18 +51,22 @@ emitTerm depth (LetMatch n t v bs k) =
      ) [0 :: Int ..] bs)
   ++ indent depth ++ "}\n"
   ++ emitTerm depth k
+emitTerm depth (LetArray n t l d k) = indent depth ++ emitType t ++ " " ++ n ++ " = make_" ++ emitType t ++ "(" ++ emitVal l ++ ", " ++ emitVal d ++ ");\n" ++ emitTerm depth k
 emitTerm depth (Assign n v) = indent depth ++ n ++ " = " ++ emitVal v ++ ";"
 emitTerm depth (Ret v) = indent depth ++ "return " ++ emitVal v ++ ";"
 
 emitExpr :: Expr -> String
-emitExpr (Arith o l r) = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
-emitExpr (Comp o l r)  = emitVal l ++ " " ++ emitCOp o ++ " " ++ emitVal r
-emitExpr (Logic o l r) = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
-emitExpr (Call f xs)   = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
-emitExpr (Pair xs)     = "{ " ++ emitStructFields xs ++ " }"
-emitExpr (Inj i v)     = "{ .tag = " ++ show i ++ ", .val._" ++ show i ++ " = " ++ emitVal v ++ " }"
-emitExpr (Cast i v)    = emitVal v ++ ".val._" ++ show i
-emitExpr (Proj i v)    = emitVal v ++ "._" ++ show i
+emitExpr (Arith o l r)    = emitVal l ++ " " ++ emitAOp o ++ " " ++ emitVal r
+emitExpr (Comp o l r)     = emitVal l ++ " " ++ emitCOp o ++ " " ++ emitVal r
+emitExpr (Logic o l r)    = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
+emitExpr (Call f xs)      = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
+emitExpr (Pair xs)        = "{ " ++ emitStructFields xs ++ " }"
+emitExpr (Inj i v)        = "{ .tag = " ++ show i ++ ", .val._" ++ show i ++ " = " ++ emitVal v ++ " }"
+emitExpr (ArrayGet t i)   = emitVal t ++ ".data[" ++ emitVal i ++ "]"
+emitExpr (ArraySet t i v) = "(" ++ emitVal t ++ ".data[" ++ emitVal i ++ "] = " ++ emitVal v ++ ", " ++ emitVal t ++ ")"
+emitExpr (ArrayLen t)     = emitVal t ++ ".len"
+emitExpr (Cast i v)       = emitVal v ++ ".val._" ++ show i
+emitExpr (Proj i v)       = emitVal v ++ "._" ++ show i
 
 emitVal :: Val -> String
 emitVal (Var n _)       = n
@@ -75,10 +79,18 @@ emitType Number = "int"
 emitType Boolean = "bool"
 emitType (Prod ts) = "prod_" ++ intercalate "_" (map emitType ts) ++ "_end"
 emitType (Sum ts) = "sum_" ++ intercalate "_" (map emitType ts) ++ "_end"
+emitType (Array t) = "array_" ++ emitType t ++ "_end"
 
 emitTypeDef :: Type -> String
 emitTypeDef t@(Prod ts) = "typedef struct { " ++ emitStructFieldTypes ts ++ " } " ++ emitType t ++ ";"
 emitTypeDef t@(Sum ts)  = "typedef struct { int tag; union { " ++ emitUnionVariantTypes ts ++ " } val; } " ++ emitType t ++ ";"
+emitTypeDef t@(Array u) = "typedef struct { int len; " ++ emitType u ++ "* data; } " ++ emitType t ++ ";\n"
+                       ++ emitType t ++ " make_" ++ emitType t ++ "(int len, " ++ emitType u ++ " default_val) {\n"
+                       ++ "  " ++ emitType u ++ "* data = malloc(len * sizeof(" ++ emitType u ++ "));\n"
+                       ++ "  for (int i = 0; i < len; ++i) data[i] = default_val;\n"
+                       ++ "  " ++ emitType t ++ " result = { .len = len, .data = data };\n"
+                       ++ "  return result;\n"
+                       ++ "}"
 emitTypeDef _           = error "Not a user defined type"
 
 emitStructFieldTypes :: [Type] -> String
