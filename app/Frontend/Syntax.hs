@@ -15,6 +15,12 @@ data Term
   | Call Name [Term]
   | Var Ix
 
+  | Pair [Term]
+  | Proj Int Term
+
+  | Inj Type Int Term
+  | Match Type Term [(Name, Term)]
+
   | BoolLit Bool
   | If Type Term Term Term
 
@@ -28,6 +34,8 @@ data Term
 data Type
   = Number
   | Boolean
+  | Prod [Type]
+  | Sum [Type]
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -65,13 +73,23 @@ infer ctx tm = case tm of
     Just (ix, a) -> pure (Var ix, a) 
     Nothing -> err ctx (UnboundVar n)
 
+  S.Pair{} -> err ctx (UnInferable "Pair must be checked.")
+
+  S.Proj n t -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Prod ts -> do 
+        when (n >= length ts) (err ctx $ OutOfBounds (length ts - 1) n)
+        pure (Proj n ttm, ts !! n)
+      _       -> err ctx (CannotPerfomOn "projection" "non-product type")
+
+  S.Inj{} -> err ctx (UnInferable "Inject must be checked.")
+
+  S.Match{} -> err ctx (UnInferable "Match must be checked.")
+
   S.BoolLit b -> pure (BoolLit b, Boolean)
 
-  S.If v t u -> do
-    vtm <- check ctx v Boolean
-    (ttm, a) <- infer ctx t
-    utm <- check ctx u a
-    pure (If a vtm ttm utm, a)
+  S.If{} -> err ctx (UnInferable "If must be checked.")
 
   S.NumLit i -> pure (NumLit i, Number)
 
@@ -100,6 +118,30 @@ check ctx tm ty = case (tm, ty) of
     vtm <- check (bindLocal n ct ctx) v a
     pure (Let n ct utm vtm)
 
+  (S.Pair ts, Prod as) -> do
+    when (length ts /= length as) (err ctx $ ArgumentMismatch "pair" (length as) (length ts))
+    cts <- zipWithM (check ctx) ts as
+    pure (Pair cts)
+
+  (S.Pair{}, a) -> err ctx (TypeMismatch (Prod []) a)
+
+  (S.Inj n t, a@(Sum as)) -> do
+    when (n >= length as) (err ctx $ OutOfBounds (length as - 1) n)
+    ct <- check ctx t (as !! n)
+    pure (Inj a n ct)
+
+  (S.Inj{}, a) -> err ctx (TypeMismatch (Sum []) a)
+
+  (S.Match t bs, a) -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Sum ts -> do
+        when (length bs /= length ts) (err ctx $ ArgumentMismatch "match" (length ts) (length bs))
+        let checkBranch (n, u) bty = pair n <$> check (bindLocal n bty ctx) u a
+        cbs <- zipWithM checkBranch bs ts
+        pure (Match a ttm cbs)
+      _ -> err ctx (CannotPerfomOn "match" "non-sum type")
+
   (S.If v t u, a) -> do
     vtm <- check ctx v Boolean
     ttm <- check ctx t a
@@ -117,6 +159,8 @@ checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
   S.Boolean -> pure Boolean
+  S.Prod ts -> Prod <$> mapM (checkType ctx) ts
+  S.Sum ts -> Sum <$> mapM (checkType ctx) ts
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of
@@ -150,6 +194,8 @@ data Error'
   | UnboundFn Name
   | TypeMismatch Type Type
   | ArgumentMismatch Name Int Int
+  | CannotPerfomOn String String
+  | OutOfBounds Int Int
   deriving Show
 
 

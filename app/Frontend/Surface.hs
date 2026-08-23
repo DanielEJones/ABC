@@ -23,6 +23,12 @@ data Term
   | Call Name [Term]
   | Var Name
 
+  | Pair [Term]
+  | Proj Int Term
+
+  | Inj Int Term
+  | Match Term [(Name, Term)]
+
   | BoolLit Bool
   | If Term Term Term
 
@@ -37,6 +43,8 @@ data Type
   = TyLoc Loc Type
   | Number
   | Boolean
+  | Prod [Type]
+  | Sum [Type]
   deriving Show
   
 
@@ -76,6 +84,25 @@ parseCall = parens $
 parseVar :: Parser Term
 parseVar = Var <$> parseAtom
 
+parsePair :: Parser Term
+parsePair = parens . into' "pair" $
+  Pair <$> many parseTerm
+
+parseProj :: Parser Term
+parseProj = parens . into' "project" $
+  Proj <$> parseRawNumber
+       <*> parseTerm
+
+parseInj :: Parser Term
+parseInj = parens . into' "inject" $
+  Inj <$> parseRawNumber
+      <*> parseTerm
+
+parseMatch :: Parser Term
+parseMatch = parens . into' "match" $
+  Match <$> parseTerm
+        <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
+
 parseBoolLit :: Parser Term
 parseBoolLit = 
       "true"  `into` BoolLit True
@@ -111,6 +138,10 @@ parseLogic = parens $
 parseTerm :: Parser Term
 parseTerm = located $ 
       try parseLet 
+  <|> try parsePair
+  <|> try parseProj
+  <|> try parseInj
+  <|> try parseMatch
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
@@ -132,8 +163,16 @@ parseNumber = "int" `into` Number
 parseBoolean :: Parser Type
 parseBoolean = "bool" `into` Boolean
 
+parseProd :: Parser Type
+parseProd = parens . into' "&" $ 
+  Prod <$> many parseType
+
+parseSum :: Parser Type
+parseSum = parens . into' "|" $
+  Sum <$> many parseType
+
 parseType :: Parser Type
-parseType = parseNumber <|> parseBoolean
+parseType = located $ parseNumber <|> parseBoolean <|> try parseProd <|> parseSum
 
 
 -- 

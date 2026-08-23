@@ -24,7 +24,8 @@ data Database = Database
   , dbSigs     :: Store Ident (Either Error Sn.Sig)
   , dbDefs     :: Store Ident (Either Error Sf.Term)
   , dbChecked  :: Store Ident (Either Error Sn.Term)
-  , dbLowered  :: Store Ident (Either Error Ir.Decl)
+  , dbTypes    :: Store Ident (Either Error [String])
+  , dbLowered  :: Store Ident (Either Error (Ir.Decl, [Sn.Type]))
   , dbCodeGen  :: Store Ident (Either Error String)
   , dbProtoGen :: Store Ident (Either Error String)
   , dbCompiled :: Store FilePath (Either Error String)
@@ -33,6 +34,7 @@ data Database = Database
 emptyDatabase :: IO Database
 emptyDatabase = Database
   <$> newIORef Map.empty
+  <*> newIORef Map.empty
   <*> newIORef Map.empty
   <*> newIORef Map.empty
   <*> newIORef Map.empty
