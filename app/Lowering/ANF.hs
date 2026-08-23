@@ -166,14 +166,6 @@ registerType t = modify $ \s -> s
   { loweredTypes = loweredTypes s ++ getTypesOf t 
   }
 
--- registerType t@(Prod ts) = do 
---   mapM_ registerType ts 
---   modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
--- registerType t@(Sum ts) = do
---   mapM_ registerType ts
---   modify (\s -> s{ loweredTypes = loweredTypes s ++ [t] })
--- registerType _ = pure ()
-
 getTypesOf :: Type -> [Type]
 getTypesOf t@(Prod ts) = concatMap getTypesOf ts ++ [t]
 getTypesOf t@(Sum ts)  = concatMap getTypesOf ts ++ [t]
