@@ -61,7 +61,7 @@ emitExpr (Logic o l r) = emitVal l ++ " " ++ emitLOp o ++ " " ++ emitVal r
 emitExpr (Call f xs)   = "abc_" ++ mangleName f ++ "(" ++ intercalate ", " (map emitVal xs) ++ ")"
 emitExpr (Pair xs)     = "{ " ++ emitStructFields xs ++ " }"
 emitExpr (Inj i v)     = "{ .tag = " ++ show i ++ ", .val._" ++ show i ++ " = " ++ emitVal v ++ " }"
-emitExpr (Cast i v)    = "(" ++ emitVal v ++ ").val._" ++ show i
+emitExpr (Cast i v)    = emitVal v ++ ".val._" ++ show i
 emitExpr (Proj i v)    = emitVal v ++ "._" ++ show i
 
 emitVal :: Val -> String

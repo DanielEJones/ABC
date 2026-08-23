@@ -78,21 +78,18 @@ infer ctx tm = case tm of
   S.Proj n t -> do
     (ttm, tty) <- infer ctx t
     case tty of
-      Prod ts -> pure (Proj n ttm, ts !! n)
+      Prod ts -> do 
+        when (n >= length ts) (err ctx $ OutOfBounds (length ts - 1) n)
+        pure (Proj n ttm, ts !! n)
       _       -> err ctx (CannotPerfomOn "projection" "non-product type")
 
   S.Inj{} -> err ctx (UnInferable "Inject must be checked.")
 
-  S.Match _t _bs -> do
-    undefined
+  S.Match{} -> err ctx (UnInferable "Match must be checked.")
 
   S.BoolLit b -> pure (BoolLit b, Boolean)
 
-  S.If v t u -> do
-    vtm <- check ctx v Boolean
-    (ttm, a) <- infer ctx t
-    utm <- check ctx u a
-    pure (If a vtm ttm utm, a)
+  S.If{} -> err ctx (UnInferable "If must be checked.")
 
   S.NumLit i -> pure (NumLit i, Number)
 
@@ -129,7 +126,7 @@ check ctx tm ty = case (tm, ty) of
   (S.Pair{}, a) -> err ctx (TypeMismatch (Prod []) a)
 
   (S.Inj n t, a@(Sum as)) -> do
-    when (n >= length as) (err ctx $ ArgumentMismatch "sum" (length as) n)
+    when (n >= length as) (err ctx $ OutOfBounds (length as - 1) n)
     ct <- check ctx t (as !! n)
     pure (Inj a n ct)
 
@@ -139,6 +136,7 @@ check ctx tm ty = case (tm, ty) of
     (ttm, tty) <- infer ctx t
     case tty of
       Sum ts -> do
+        when (length bs /= length ts) (err ctx $ ArgumentMismatch "match" (length ts) (length bs))
         let checkBranch (n, u) bty = pair n <$> check (bindLocal n bty ctx) u a
         cbs <- zipWithM checkBranch bs ts
         pure (Match a ttm cbs)
@@ -197,6 +195,7 @@ data Error'
   | TypeMismatch Type Type
   | ArgumentMismatch Name Int Int
   | CannotPerfomOn String String
+  | OutOfBounds Int Int
   deriving Show
 
 
