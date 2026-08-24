@@ -164,8 +164,8 @@ normalize ctx tm k = case tm of
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
 normalizeList _ [] k = k []
 normalizeList ctx (t:ts) k = 
-  normalizeList ctx ts $ \ts' -> 
-    normalize ctx t $ \t' ->
+  normalize ctx t $ \t' ->
+    normalizeList ctx ts $ \ts' -> 
       k (t' : ts')
 
 
