@@ -29,6 +29,7 @@ data Term
   | Inj Int Term
   | Match Term [(Name, Term)]
 
+  | ArrayLit [Term]
   | ArrayNew Term Term
   | ArrayGet Term Term
   | ArraySet Term Term Term
@@ -109,6 +110,9 @@ parseMatch = parens . into' "match" $
   Match <$> parseTerm
         <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
 
+parseArrayLit :: Parser Term
+parseArrayLit = braces (ArrayLit <$> many parseTerm)
+
 parseArrayNew :: Parser Term
 parseArrayNew = parens . into' "array-new" $
   ArrayNew <$> parseTerm
@@ -168,6 +172,7 @@ parseTerm = located $
   <|> try parseProj
   <|> try parseInj
   <|> try parseMatch
+  <|> parseArrayLit
   <|> try parseArrayNew
   <|> try parseArrayGet
   <|> try parseArraySet

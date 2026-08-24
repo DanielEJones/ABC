@@ -22,6 +22,7 @@ data Term
   | LetIf Name Type Val Term Term Term
   | LetMatch Name Type Val [Term] Term
   | LetArray Name Type Val Val Term
+  | LetArrayLit Name Type [Val] Term
   | Assign Name Val
   | Ret Val
   deriving Show
@@ -103,6 +104,12 @@ normalize ctx tm k = case tm of
       bs' <- zipWithM doBranch bs [0..]
 
       LetMatch n a v' bs' <$> k (Var n a)
+
+  S.ArrayLit a ts ->
+    normalizeList ctx ts $ \ts' -> do
+      registerType a
+      n <- fresh
+      LetArrayLit n a ts' <$> k (Var n a)
 
   S.ArrayNew a l d -> 
     normalize ctx l $ \l' -> 

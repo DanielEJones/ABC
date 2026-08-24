@@ -21,6 +21,7 @@ data Term
   | Inj Type Int Term
   | Match Type Term [(Name, Term)]
 
+  | ArrayLit Type [Term]
   | ArrayNew Type Term Term
   | ArrayGet Term Term
   | ArraySet Term Term Term
@@ -92,6 +93,8 @@ infer ctx tm = case tm of
   S.Inj{} -> err ctx (UnInferable "Inject must be checked.")
 
   S.Match{} -> err ctx (UnInferable "Match must be checked.")
+
+  S.ArrayLit{} -> err ctx (UnInferable "Array literal must be checked.")
 
   S.ArrayNew{} -> err ctx (UnInferable "Array construction must be checked.")
 
@@ -171,6 +174,11 @@ check ctx tm ty = case (tm, ty) of
         cbs <- zipWithM checkBranch bs ts
         pure (Match a ttm cbs)
       _ -> err ctx (CannotPerfomOn "match" "non-sum type")
+
+  (S.ArrayLit ts, Array a) -> do
+    ArrayLit (Array a) <$> mapM (\t -> check ctx t a) ts
+
+  (S.ArrayLit{}, a) -> err ctx (TypeMismatch (Array a) a)
 
   (S.ArrayNew l t, Array a) -> do
     ltm <- check ctx l Number
