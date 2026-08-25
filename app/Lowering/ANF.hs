@@ -23,6 +23,7 @@ data Term
   | LetMatch Name Type Val [Term] Term
   | LetArray Name Type Val Val Term
   | LetArrayLit Name Type [Val] Term
+  | LetFold Name Type Val Term
   | Assign Name Val
   | Ret Val
   deriving Show
@@ -38,6 +39,7 @@ data Expr
   | ArrayGet Val Val
   | ArraySet Val Val Val
   | ArrayLen Val
+  | UnFold Val
   | Cast Int Val
   deriving Show
 
@@ -57,11 +59,11 @@ lower ctx tm (Sig n ps r) =
   let anfCtx = Context [] (ctxGlob ctx)
       fnCtx = foldl' (\c (p, ty) -> bindLocal (Var p ty) c) anfCtx ps
       (t, s) = lowerTerm fnCtx tm
-  in (Fn n ps r t, concatMap (getTypesOf . snd) ps ++ s)
+  in (Fn n ps r t, concatMap (getTypesOf [] . snd) ps ++ s)
 
 lowerTerm :: Context -> S.Term -> (Term, [Type])
 lowerTerm ctx tm = 
-  let (t, s) = runState (normalize ctx tm ret) (LoweringState 0 [])
+  let (t, s) = runState (normalize ctx tm ret) (LoweringState 0 [] [])
   in (t, loweredTypes s)
 
 
@@ -133,6 +135,16 @@ normalize ctx tm k = case tm of
     normalize ctx t $ \t' ->
       letBind Number (ArrayLen t') k
 
+  S.Fold a t -> 
+    normalize ctx t $ \t' -> do
+      registerType a
+      n <- fresh
+      LetFold n a t' <$> k (Var n a)
+
+  S.UnFold a t -> 
+    normalize ctx t $ \t' -> 
+      letBind a (UnFold t') k
+
   S.BoolLit b -> k (BoolLit b)
 
   S.If a v t u -> 
@@ -178,6 +190,7 @@ type ANF a = State LoweringState a
 data LoweringState = LoweringState
   { loweredCount :: Int
   , loweredTypes :: [Type]
+  , loweredFixes :: [Type]
   }
 
 fresh :: ANF Name
@@ -194,17 +207,39 @@ letBind ty e k = do
   n <- fresh
   Let n ty e <$> k (Var n ty)
 
+addType :: Type -> ANF ()
+addType t = modify $ \s -> s{ loweredTypes = loweredTypes s ++ [t] }
+
+addSeen :: Type -> ANF ()
+addSeen t = modify $ \s -> s{ loweredFixes = t : loweredFixes s }
+
+hasSeen :: Type -> ANF Bool
+hasSeen t = do s <- get; pure (t `elem` loweredFixes s)
+
 registerType :: Type -> ANF ()
-registerType t = modify $ \s -> s
-  { loweredTypes = loweredTypes s ++ getTypesOf t 
-  }
+registerType t@(Prod as) = do mapM_ registerType as; addType t
+registerType t@(Sum as)  = do mapM_ registerType as; addType t
+registerType t@(Array a) = do registerType a; addType t
+registerType t@Fix{}    = do 
+  seen <- hasSeen t
+  if (not seen)
+    then do 
+      addSeen t 
+      addType t
+      registerType (unfoldType t) 
+    else pure ()
+registerType TypeVar{} = error "Should never try to find type of unbound var"
+registerType _ = pure ()
 
-getTypesOf :: Type -> [Type]
-getTypesOf t@(Prod ts) = concatMap getTypesOf ts ++ [t]
-getTypesOf t@(Sum ts)  = concatMap getTypesOf ts ++ [t]
-getTypesOf t@(Array u) = getTypesOf u ++ [t]
-getTypesOf _           = []
-
+getTypesOf :: [Type] -> Type -> [Type]
+getTypesOf seen t@(Prod as) = concatMap (getTypesOf seen) as ++ [t]
+getTypesOf seen t@(Sum as)  = concatMap (getTypesOf seen) as ++ [t]
+getTypesOf seen t@(Array a) = getTypesOf seen a ++ [t]
+getTypesOf seen t@Fix{}
+  | t `elem` seen = []
+  | otherwise = t : getTypesOf (t : seen) (unfoldType t) 
+getTypesOf _    TypeVar{}   = error "Should never find type of unbound var"
+getTypesOf _    _           = []
 
 --
 -- Context

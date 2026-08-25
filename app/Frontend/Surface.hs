@@ -35,6 +35,9 @@ data Term
   | ArraySet Term Term Term
   | ArrayLen Term
 
+  | Fold Term
+  | UnFold Term
+
   | BoolLit Bool
   | If Term Term Term
 
@@ -52,6 +55,8 @@ data Type
   | Prod [Type]
   | Sum [Type]
   | Array Type
+  | Fix Name Type
+  | TypeVar Name
   deriving Show
   
 
@@ -133,6 +138,14 @@ parseArrayLen :: Parser Term
 parseArrayLen = parens . into' "array-len" $
   ArrayLen <$> parseTerm
 
+parseFold :: Parser Term
+parseFold = parens . into' "fold" $
+  Fold <$> parseTerm
+
+parseUnFold :: Parser Term
+parseUnFold = parens . into' "unfold" $
+  UnFold <$> parseTerm
+
 parseBoolLit :: Parser Term
 parseBoolLit = 
       "true"  `into` BoolLit True
@@ -177,6 +190,8 @@ parseTerm = located $
   <|> try parseArrayGet
   <|> try parseArraySet
   <|> try parseArrayLen
+  <|> try parseFold
+  <|> try parseUnFold
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
@@ -210,6 +225,14 @@ parseArray :: Parser Type
 parseArray = parens . into' "array" $
   Array <$> parseType
 
+parseFix :: Parser Type
+parseFix = parens . into' "fix" $
+  Fix <$> parseAtom
+      <*> parseType
+
+parseTypeVar :: Parser Type
+parseTypeVar = TypeVar <$> parseAtom
+
 parseType :: Parser Type
 parseType = located $ 
       parseNumber 
@@ -217,6 +240,8 @@ parseType = located $
   <|> try parseProd 
   <|> try parseSum 
   <|> try parseArray
+  <|> try parseFix
+  <|> try parseTypeVar
 
 
 -- 
