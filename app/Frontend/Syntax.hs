@@ -103,20 +103,20 @@ infer ctx tm = case tm of
 
   S.ArrayNew{} -> err ctx (UnInferable "Array construction must be checked.")
 
-  S.ArrayGet t i -> do
-    (ttm, tty) <- infer ctx t
+  S.ArrayGet i t -> do
     itm <- check ctx i Number
+    (ttm, tty) <- infer ctx t
     case tty of
-      Array a -> pure (ArrayGet ttm itm, a)
+      Array a -> pure (ArrayGet itm ttm, a)
       _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
 
-  S.ArraySet t i v -> do
-    (ttm, tty) <- infer ctx t
+  S.ArraySet i t v -> do
     itm <- check ctx i Number
+    (ttm, tty) <- infer ctx t
     case tty of
       Array a -> do
         vtm <- check ctx v a
-        pure (ArraySet ttm itm vtm, Array a)
+        pure (ArraySet itm ttm vtm, Array a)
       _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
 
   S.ArrayLen t -> do

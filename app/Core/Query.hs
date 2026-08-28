@@ -10,7 +10,7 @@ import qualified Data.Map as Map
 
 import qualified Frontend.Surface as Sf
 import qualified Frontend.Syntax as Sn
-import qualified Lowering.ANF as Ir
+import qualified Lowering.Core as Ir
 
 import Core.Common
 
@@ -24,7 +24,7 @@ data Database = Database
   , dbSigs     :: Store Ident (Either Error Sn.Sig)
   , dbDefs     :: Store Ident (Either Error Sf.Term)
   , dbChecked  :: Store Ident (Either Error Sn.Term)
-  , dbTypes    :: Store Ident (Either Error [String])
+  , dbTypes    :: Store Ident (Either Error [Sn.Type])
   , dbLowered  :: Store Ident (Either Error (Ir.Decl, [Sn.Type]))
   , dbCodeGen  :: Store Ident (Either Error String)
   , dbProtoGen :: Store Ident (Either Error String)
