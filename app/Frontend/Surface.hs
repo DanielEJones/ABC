@@ -202,7 +202,6 @@ parseTerm = located $
   <|> parseVar
 
 
-
 --
 -- Type Parser
 --
