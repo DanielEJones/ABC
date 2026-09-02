@@ -94,7 +94,6 @@ emitExpr (Pair xs)        = "{ " ++ emitStructFields xs ++ " }"
 emitExpr (Inj i v)        = "{ .tag = " ++ show i ++ ", .val._" ++ show i ++ " = " ++ emitVal v ++ " }"
 emitExpr (ArrayGet i t)   = maybeCopy (arrayBase $ typeOf t) (emitVal t ++ ".data[" ++ emitVal i ++ "]") -- Copy the value if its owned
 emitExpr (ArraySet i t v) = "set_" ++ emitType (typeOf t) ++ "(" ++ emitVal i ++ ", " ++ emitVal t ++ ", " ++ emitVal v ++ ")"
--- "(" ++ emitVal t ++ ".data[" ++ emitVal i ++ "] = " ++ emitVal v ++ ", " ++ emitVal t ++ ")"
 emitExpr (ArrayLen t)     = emitVal t ++ ".len"
 emitExpr (UnFold v)       = "deref_" ++ emitType (typeOf v) ++ "(&" ++ emitVal v ++ ")"
 emitExpr (Cast i v)       = emitVal v ++ ".val._" ++ show i
@@ -103,6 +102,7 @@ emitExpr (Proj i v)       = maybeCopy (projType v i) (emitVal v ++ "._" ++ show 
 emitVal :: Val -> String
 emitVal (Var n _)       = n
 emitVal (NumLit i)      = show i
+emitVal (ByteLit b)     = show b
 emitVal (BoolLit True)  = "true"
 emitVal (BoolLit False) = "false"
 
@@ -112,6 +112,7 @@ emitType t = doTypeSub t
 doTypeSub :: Type -> String
 doTypeSub t = case t of
   Number -> "int"
+  Byte -> "uint8_t"
   Boolean -> "bool"
   Prod as -> "prod_" ++  intercalate "_" (map doTypeSub as) ++ "_end"
   Sum as -> "sum_" ++ intercalate "_" (map doTypeSub as) ++ "_end"

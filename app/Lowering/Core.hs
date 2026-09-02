@@ -45,6 +45,7 @@ data Expr
 data Val
   = Var Name Type
   | NumLit Int
+  | ByteLit Int
   | BoolLit Bool
   deriving Show
 
@@ -152,6 +153,7 @@ getRetType n ctx = sigReturn (getGlobal n ctx)
 typeOf :: Val -> Type
 typeOf (Var _ t)   = t
 typeOf (NumLit _)  = Number
+typeOf (ByteLit _) = Byte
 typeOf (BoolLit _) = Boolean
 
 instance HasName Val where

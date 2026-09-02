@@ -42,6 +42,8 @@ data Term
   | If Term Term Term
 
   | NumLit Int
+  | CharLit Char
+  | StringLit String
 
   | Arith AOp Term Term
   | Comp COp Term Term
@@ -52,6 +54,7 @@ data Type
   = TyLoc Loc Type
   | Number
   | Boolean
+  | Byte
   | Prod [Type]
   | Sum [Type]
   | Array Type
@@ -160,6 +163,18 @@ parseIf = parens . into' "if" $
 parseNumLit :: Parser Term
 parseNumLit = NumLit <$> parseRawNumber
 
+parseCharLit :: Parser Term
+parseCharLit = lexeme $ do
+  _ <- char '\''
+  ch <- L.charLiteral
+  _ <- char '\''
+  pure (CharLit ch)
+
+parseStringLit :: Parser Term
+parseStringLit = lexeme $ do
+  body <- char '"' *> manyTill L.charLiteral (char '"')
+  pure (StringLit body)
+
 parseArith :: Parser Term
 parseArith = parens $
   Arith <$> parseAOp
@@ -199,6 +214,8 @@ parseTerm = located $
   <|> parseCall 
   <|> parseBoolLit
   <|> parseNumLit 
+  <|> parseCharLit
+  <|> parseStringLit
   <|> parseVar
 
 
@@ -208,6 +225,9 @@ parseTerm = located $
 
 parseNumber :: Parser Type
 parseNumber = "int" `into` Number
+
+parseByte :: Parser Type
+parseByte = "byte" `into` Byte
 
 parseBoolean :: Parser Type
 parseBoolean = "bool" `into` Boolean
@@ -235,6 +255,7 @@ parseTypeVar = TypeVar <$> parseAtom
 parseType :: Parser Type
 parseType = located $ 
       parseNumber 
+  <|> parseByte
   <|> parseBoolean
   <|> try parseProd 
   <|> try parseSum 

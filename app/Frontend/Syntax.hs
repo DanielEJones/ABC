@@ -34,6 +34,7 @@ data Term
   | If Type Term Term Term
 
   | NumLit Int
+  | ByteLit Int
 
   | Arith AOp Term Term
   | Comp COp Term Term
@@ -42,6 +43,7 @@ data Term
 
 data Type
   = Number
+  | Byte
   | Boolean
   | Prod [Type]
   | Sum [Type]
@@ -138,7 +140,13 @@ infer ctx tm = case tm of
 
   S.If{} -> err ctx (UnInferable "If must be checked.")
 
-  S.NumLit i -> pure (NumLit i, Number)
+  S.NumLit i -> if i < 256 
+    then pure (ByteLit i, Byte)
+    else pure (NumLit i, Number)
+
+  S.CharLit ch -> pure (ByteLit $ fromEnum ch, Byte)
+
+  S.StringLit str -> pure (ArrayLit (Array Byte) $ map (ByteLit . fromEnum) str, Array Byte)
 
   S.Arith o t u -> do
     ttm <- check ctx t Number
@@ -213,9 +221,14 @@ check ctx tm ty = case (tm, ty) of
     utm <- check ctx u a
     pure (If a vtm ttm utm)
 
+  (S.NumLit b, Byte) | b < 256 -> pure (ByteLit b)
+                     | otherwise -> err ctx (TooLargeNumLit 256 b)
+
+  (S.NumLit i, Number) -> pure (NumLit i)
+
   (t, a) -> do
     (ttm, tty) <- infer ctx t
-    if tty /= a
+    if tty /= a && not (a == Number && tty == Byte)
       then err ctx (TypeMismatch tty a)
       else pure ttm
 
@@ -223,6 +236,7 @@ checkType :: Context -> S.Type -> Elab Type
 checkType ctx ty = case ty of
   S.TyLoc l a -> checkType (withLoc l ctx) a
   S.Number -> pure Number
+  S.Byte -> pure Byte
   S.Boolean -> pure Boolean
   S.Prod ts -> Prod <$> mapM (checkType ctx) ts
   S.Sum ts -> Sum <$> mapM (checkType ctx) ts
@@ -267,6 +281,7 @@ data Error'
   | ArgumentMismatch Name Int Int
   | CannotPerfomOn String String
   | OutOfBounds Int Int
+  | TooLargeNumLit Int Int
   deriving Show
 
 
@@ -334,6 +349,7 @@ unfoldType t           = t
 substType :: Ix -> Type -> Type -> Type
 substType ix s ty = case ty of
   Number -> Number
+  Byte -> Byte
   Boolean -> Boolean
   Prod ts -> Prod (map (substType ix s) ts)
   Sum ts -> Sum (map (substType ix s) ts)
@@ -348,6 +364,7 @@ substType ix s ty = case ty of
 shiftType :: Ix -> Int -> Type -> Type
 shiftType cutoff d ty = case ty of
   Number -> Number
+  Byte -> Byte
   Boolean -> Boolean
   Prod ts -> Prod (map (shiftType cutoff d) ts)
   Sum ts -> Sum (map (shiftType cutoff d) ts)
