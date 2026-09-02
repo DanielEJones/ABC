@@ -21,6 +21,15 @@ data Term
   | Inj Type Int Term
   | Match Type Term [(Name, Term)]
 
+  | ArrayLit Type [Term]
+  | ArrayNew Type Term Term
+  | ArrayGet Term Term
+  | ArraySet Term Term Term
+  | ArrayLen Term
+
+  | Fold Type Term
+  | UnFold Type Term
+
   | BoolLit Bool
   | If Type Term Term Term
 
@@ -36,6 +45,9 @@ data Type
   | Boolean
   | Prod [Type]
   | Sum [Type]
+  | Array Type
+  | Fix Type
+  | TypeVar Ix
   deriving (Show, Eq)
 
 data Sig = Sig
@@ -86,6 +98,41 @@ infer ctx tm = case tm of
   S.Inj{} -> err ctx (UnInferable "Inject must be checked.")
 
   S.Match{} -> err ctx (UnInferable "Match must be checked.")
+
+  S.ArrayLit{} -> err ctx (UnInferable "Array literal must be checked.")
+
+  S.ArrayNew{} -> err ctx (UnInferable "Array construction must be checked.")
+
+  S.ArrayGet i t -> do
+    itm <- check ctx i Number
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Array a -> pure (ArrayGet itm ttm, a)
+      _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
+
+  S.ArraySet i t v -> do
+    itm <- check ctx i Number
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Array a -> do
+        vtm <- check ctx v a
+        pure (ArraySet itm ttm vtm, Array a)
+      _ -> err ctx (CannotPerfomOn "indexing" "non-array type")
+
+  S.ArrayLen t -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Array{} -> pure (ArrayLen ttm, Number)
+      _ -> err ctx (CannotPerfomOn "length" "non-array type")
+
+  S.Fold{} -> err ctx (UnInferable "fold must be checked")
+
+  S.UnFold t -> do
+    (ttm, tty) <- infer ctx t
+    case tty of
+      Fix{} -> let a = unfoldType tty 
+               in pure (UnFold a ttm, a)
+      _ -> err ctx (CannotPerfomOn "unfold" "non-recursive type")
 
   S.BoolLit b -> pure (BoolLit b, Boolean)
 
@@ -142,6 +189,24 @@ check ctx tm ty = case (tm, ty) of
         pure (Match a ttm cbs)
       _ -> err ctx (CannotPerfomOn "match" "non-sum type")
 
+  (S.ArrayLit ts, Array a) -> do
+    ArrayLit (Array a) <$> mapM (\t -> check ctx t a) ts
+
+  (S.ArrayLit{}, a) -> err ctx (TypeMismatch (Array a) a)
+
+  (S.ArrayNew l t, Array a) -> do
+    ltm <- check ctx l Number
+    ttm <- check ctx t a
+    pure (ArrayNew (Array a) ltm ttm)
+
+  (S.ArrayNew{}, a) -> err ctx (TypeMismatch (Array a) a)
+
+  (S.Fold t, Fix a) -> do
+    ctm <- check ctx t (unfoldType $ Fix a)
+    pure (Fold (Fix a) ctm)
+
+  (S.Fold{}, a) -> err ctx (TypeMismatch (Fix a) a)
+
   (S.If v t u, a) -> do
     vtm <- check ctx v Boolean
     ttm <- check ctx t a
@@ -161,6 +226,11 @@ checkType ctx ty = case ty of
   S.Boolean -> pure Boolean
   S.Prod ts -> Prod <$> mapM (checkType ctx) ts
   S.Sum ts -> Sum <$> mapM (checkType ctx) ts
+  S.Array t -> Array <$> checkType ctx t
+  S.Fix n t -> Fix <$> checkType (bindType n ctx) t
+  S.TypeVar n -> case findType n ctx of
+    Just ix -> pure (TypeVar ix)
+    Nothing -> err ctx (UnboundTypeVar n)
 
 checkSig :: Context -> S.Decl -> Elab Sig
 checkSig ctx decl = case decl of
@@ -192,6 +262,7 @@ data Error'
   = UnInferable String
   | UnboundVar Name
   | UnboundFn Name
+  | UnboundTypeVar Name
   | TypeMismatch Type Type
   | ArgumentMismatch Name Int Int
   | CannotPerfomOn String String
@@ -204,13 +275,14 @@ data Error'
 --
 
 data Context = Context 
-  { ctxLoc  :: Loc
-  , ctxVars :: [(Name, Type)]
-  , ctxGlob :: [Sig]
+  { ctxLoc   :: Loc
+  , ctxVars  :: [(Name, Type)]
+  , ctxGlob  :: [Sig]
+  , ctxTypes :: [Name]
   }
 
 emptyContext :: Loc -> Context
-emptyContext loc = Context loc [] []
+emptyContext loc = Context loc [] [] []
 
 withLoc :: Loc -> Context -> Context
 withLoc loc ctx = ctx{ ctxLoc = loc }
@@ -235,4 +307,53 @@ bindGlobal s ctx = ctx{ ctxGlob = s : ctxGlob ctx }
 
 findGlobal :: Name -> Context -> Maybe Sig
 findGlobal n ctx = findName n (ctxGlob ctx)
+
+bindType :: Name -> Context -> Context
+bindType n ctx = ctx{ ctxTypes = n : ctxTypes ctx }
+
+findType :: Name -> Context -> Maybe Ix
+findType n ctx = go (ctxTypes ctx) 0
+  where
+    go :: [Name] -> Int -> Maybe Ix
+    go (name:rest) ix
+      | name == n = Just ix
+      | otherwise = go rest (ix + 1)
+    go [] _ = Nothing
+
+
+--
+-- Type substitution
+--
+
+-- | Turn `(fix n (t + n))` into `t + (fix n (t + n))`
+unfoldType :: Type -> Type
+unfoldType t@(Fix a) = substType 0 t a
+unfoldType t           = t
+
+-- | Replace all occurences of TVar ix with s in ty
+substType :: Ix -> Type -> Type -> Type
+substType ix s ty = case ty of
+  Number -> Number
+  Boolean -> Boolean
+  Prod ts -> Prod (map (substType ix s) ts)
+  Sum ts -> Sum (map (substType ix s) ts)
+  Array t -> Array (substType ix s t)
+  Fix t -> Fix (substType (ix + 1) (shiftType 0 1 s) t)
+  TypeVar i 
+    | i == ix -> s -- The binder we sub, replace it
+    | i > ix -> TypeVar (i - 1) -- A binder after the one we removed, so dec
+    | otherwise -> TypeVar i -- A binder before, stays
+
+-- | Lift all the binders greater than cutoff by d
+shiftType :: Ix -> Int -> Type -> Type
+shiftType cutoff d ty = case ty of
+  Number -> Number
+  Boolean -> Boolean
+  Prod ts -> Prod (map (shiftType cutoff d) ts)
+  Sum ts -> Sum (map (shiftType cutoff d) ts)
+  Array t -> Array (shiftType cutoff d t)
+  Fix t -> Fix (shiftType (cutoff + 1) d t)
+  TypeVar i
+    | i >= cutoff -> TypeVar (i + d)
+    | otherwise   -> TypeVar i
 

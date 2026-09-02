@@ -65,6 +65,8 @@ executable ABC
                     , Frontend.Syntax
                     , Generation.CodeGen
                     , Lowering.ANF
+                    , Lowering.Core
+                    , Lowering.MemoryManagement
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

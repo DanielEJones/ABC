@@ -15,7 +15,8 @@ parseArgs []          opts = opts
 
 data Options = Options
   { optFiles :: [String]
-  } deriving Show
+  } 
+  deriving Show
 
 defaultOptions :: Options
 defaultOptions = Options []

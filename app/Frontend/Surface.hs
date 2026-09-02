@@ -29,6 +29,15 @@ data Term
   | Inj Int Term
   | Match Term [(Name, Term)]
 
+  | ArrayLit [Term]
+  | ArrayNew Term Term
+  | ArrayGet Term Term
+  | ArraySet Term Term Term
+  | ArrayLen Term
+
+  | Fold Term
+  | UnFold Term
+
   | BoolLit Bool
   | If Term Term Term
 
@@ -45,6 +54,9 @@ data Type
   | Boolean
   | Prod [Type]
   | Sum [Type]
+  | Array Type
+  | Fix Name Type
+  | TypeVar Name
   deriving Show
   
 
@@ -103,6 +115,37 @@ parseMatch = parens . into' "match" $
   Match <$> parseTerm
         <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
 
+parseArrayLit :: Parser Term
+parseArrayLit = braces (ArrayLit <$> many parseTerm)
+
+parseArrayNew :: Parser Term
+parseArrayNew = parens . into' "array-new" $
+  ArrayNew <$> parseTerm
+           <*> parseTerm
+
+parseArrayGet :: Parser Term
+parseArrayGet = parens . into' "array-get" $
+  ArrayGet <$> parseTerm
+           <*> parseTerm
+
+parseArraySet :: Parser Term
+parseArraySet = parens . into' "array-set" $
+  ArraySet <$> parseTerm
+           <*> parseTerm
+           <*> parseTerm
+
+parseArrayLen :: Parser Term
+parseArrayLen = parens . into' "array-len" $
+  ArrayLen <$> parseTerm
+
+parseFold :: Parser Term
+parseFold = parens . into' "fold" $
+  Fold <$> parseTerm
+
+parseUnFold :: Parser Term
+parseUnFold = parens . into' "unfold" $
+  UnFold <$> parseTerm
+
 parseBoolLit :: Parser Term
 parseBoolLit = 
       "true"  `into` BoolLit True
@@ -142,6 +185,13 @@ parseTerm = located $
   <|> try parseProj
   <|> try parseInj
   <|> try parseMatch
+  <|> parseArrayLit
+  <|> try parseArrayNew
+  <|> try parseArrayGet
+  <|> try parseArraySet
+  <|> try parseArrayLen
+  <|> try parseFold
+  <|> try parseUnFold
   <|> try parseIf
   <|> try parseComp
   <|> try parseArith 
@@ -150,7 +200,6 @@ parseTerm = located $
   <|> parseBoolLit
   <|> parseNumLit 
   <|> parseVar
-
 
 
 --
@@ -171,8 +220,27 @@ parseSum :: Parser Type
 parseSum = parens . into' "|" $
   Sum <$> many parseType
 
+parseArray :: Parser Type
+parseArray = parens . into' "array" $
+  Array <$> parseType
+
+parseFix :: Parser Type
+parseFix = parens . into' "fix" $
+  Fix <$> parseAtom
+      <*> parseType
+
+parseTypeVar :: Parser Type
+parseTypeVar = TypeVar <$> parseAtom
+
 parseType :: Parser Type
-parseType = located $ parseNumber <|> parseBoolean <|> try parseProd <|> parseSum
+parseType = located $ 
+      parseNumber 
+  <|> parseBoolean
+  <|> try parseProd 
+  <|> try parseSum 
+  <|> try parseArray
+  <|> try parseFix
+  <|> try parseTypeVar
 
 
 -- 

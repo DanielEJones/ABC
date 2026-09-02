@@ -8,39 +8,8 @@ import Frontend.Syntax hiding (Term(..), Context, emptyContext, bindLocal, bindG
 import Control.Monad (zipWithM)
 import Control.Monad.State
 
-
---
--- Lowering Datatypes
---
-
-data Decl
-  = Fn Name [(Name, Type)] Type Term
-  deriving Show
-
-data Term 
-  = Let Name Type Expr Term 
-  | LetIf Name Type Val Term Term Term
-  | LetMatch Name Type Val [Term] Term
-  | Assign Name Val
-  | Ret Val
-  deriving Show
-
-data Expr
-  = Arith AOp Val Val
-  | Comp COp Val Val
-  | Logic LOp Val Val
-  | Call Name [Val]
-  | Pair [Val]
-  | Proj Int Val
-  | Inj Int Val
-  | Cast Int Val
-  deriving Show
-
-data Val
-  = Var Name Type
-  | NumLit Int
-  | BoolLit Bool
-  deriving Show
+import Lowering.Core
+import Lowering.MemoryManagement (insertMemoryOps)
 
 
 -- 
@@ -48,16 +17,27 @@ data Val
 --
 
 lower :: S.Context -> S.Term -> Sig -> (Decl, [Type])
-lower ctx tm (Sig n ps r) = 
-  let anfCtx = Context [] (ctxGlob ctx)
-      fnCtx = foldl' (\c (p, ty) -> bindLocal (Var p ty) c) anfCtx ps
-      (t, s) = lowerTerm fnCtx tm
-  in (Fn n ps r t, concatMap (getTypesOf . snd) ps ++ s)
+lower ctx tm (Sig n ps r) = (Fn n ps r loweredTm, paramTs ++ loweredTs)
+  where
+    params = map (uncurry Var) ps
+    paramTs = concatMap (getTypesOfVal) params
+    newContext = Context [] (ctxGlob ctx)
+    fnContext = foldl' (flip bindLocal) newContext params
+    (loweredTm, loweredTs) = lowerTerm fnContext tm
 
 lowerTerm :: Context -> S.Term -> (Term, [Type])
-lowerTerm ctx tm = 
-  let (t, s) = runState (normalize ctx tm ret) (LoweringState 0 [])
-  in (t, loweredTypes s)
+lowerTerm ctx tm = extractTypes (runState doLower initialState)
+  where
+    doLower :: ANF Term
+    doLower = do
+      normalized <- normalize ctx tm ret
+      insertMemoryOps (ctxBound ctx) normalized
+
+    extractTypes :: (Term, LoweringState) -> (Term, [Type])
+    extractTypes (t, s) = (t, loweredTypes s)
+
+    initialState :: LoweringState
+    initialState = LoweringState 0 [] [] 
 
 
 -- 
@@ -100,6 +80,44 @@ normalize ctx tm k = case tm of
 
       LetMatch n a v' bs' <$> k (Var n a)
 
+  S.ArrayLit a ts ->
+    normalizeList ctx ts $ \ts' -> do
+      registerType a
+      n <- fresh
+      LetArrayLit n a ts' <$> k (Var n a)
+
+  S.ArrayNew a l d -> 
+    normalize ctx l $ \l' -> 
+      normalize ctx d $ \d' -> do
+        registerType a
+        n <- fresh
+        LetArray n a l' d' <$> k (Var n a)
+
+  S.ArrayGet i t -> 
+    normalize ctx i $ \i' ->
+      normalize ctx t $ \t' ->
+        letBind (arrType t') (ArrayGet i' t') k
+
+  S.ArraySet i t v -> 
+    normalize ctx i $ \i' ->
+      normalize ctx t $ \t' ->
+        normalize ctx v $ \v' ->
+          letBind (Array $ arrType t') (ArraySet i' t' v') k
+
+  S.ArrayLen t -> 
+    normalize ctx t $ \t' ->
+      letBind Number (ArrayLen t') k
+
+  S.Fold a t -> 
+    normalize ctx t $ \t' -> do
+      registerType a
+      n <- fresh
+      LetFold n a t' <$> k (Var n a)
+
+  S.UnFold a t -> 
+    normalize ctx t $ \t' -> 
+      letBind a (UnFold t') k
+
   S.BoolLit b -> k (BoolLit b)
 
   S.If a v t u -> 
@@ -131,91 +149,7 @@ normalize ctx tm k = case tm of
 normalizeList :: Context -> [S.Term] -> ([Val] -> ANF Term) -> ANF Term
 normalizeList _ [] k = k []
 normalizeList ctx (t:ts) k = 
-  normalizeList ctx ts $ \ts' -> 
-    normalize ctx t $ \t' ->
+  normalize ctx t $ \t' ->
+    normalizeList ctx ts $ \ts' -> 
       k (t' : ts')
-
-
--- 
--- ANF Monad
---
-
-type ANF a = State LoweringState a
-
-data LoweringState = LoweringState
-  { loweredCount :: Int
-  , loweredTypes :: [Type]
-  }
-
-fresh :: ANF Name
-fresh = do
-  i <- state $ \s -> (loweredCount s, s{ loweredCount = loweredCount s + 1 })
-  pure ("t" ++ show i)
-
-ret :: Val -> ANF Term
-ret = pure . Ret
-
-letBind :: Type -> Expr -> (Val -> ANF Term) -> ANF Term
-letBind ty e k = do
-  registerType ty
-  n <- fresh
-  Let n ty e <$> k (Var n ty)
-
-registerType :: Type -> ANF ()
-registerType t = modify $ \s -> s
-  { loweredTypes = loweredTypes s ++ getTypesOf t 
-  }
-
-getTypesOf :: Type -> [Type]
-getTypesOf t@(Prod ts) = concatMap getTypesOf ts ++ [t]
-getTypesOf t@(Sum ts)  = concatMap getTypesOf ts ++ [t]
-getTypesOf _           = []
-
-
---
--- Context
---
-
-data Context = Context
-  { ctxBound  :: [Val]
-  , ctxGlobal :: [Sig]
-  }
-
-emptyContext :: Context
-emptyContext = Context [] []
-
-bindLocal :: Val -> Context -> Context
-bindLocal v ctx = ctx{ ctxBound = v : ctxBound ctx }
-
-getLocal :: Ix -> Context -> Val
-getLocal ix ctx = ctxBound ctx !! ix
-
-bindGlobal :: Sig -> Context -> Context
-bindGlobal s ctx = ctx{ ctxGlobal = s : ctxGlobal ctx }
-
-getGlobal :: Name -> Context -> Sig
-getGlobal n ctx = case findName n (ctxGlobal ctx) of
-  Nothing -> error "Terms should be well scoped"
-  Just sig -> sig
-
-getRetType :: Name -> Context -> Type
-getRetType n ctx = sigReturn (getGlobal n ctx)
-
-
--- 
--- Helpers
---
-
-typeOf :: Val -> Type
-typeOf (Var _ t)   = t
-typeOf (NumLit _)  = Number
-typeOf (BoolLit _) = Boolean
-
-projType :: Val -> Int -> Type
-projType (Var _ (Prod ts)) i = ts !! i
-projType _                 _ = error "Terms should be well typed"
-  
-injType :: Val -> Int -> Type
-injType (Var _ (Sum ts)) i = ts !! i
-injType _                _ = error "Terms should be well typed"
 

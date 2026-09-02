@@ -15,13 +15,13 @@ import Core.Common
 import Core.Query
 
 import qualified Frontend.Surface as Sf
-import Frontend.Surface hiding (Term, Type, Error)
+import Frontend.Surface hiding (Term(..), Type(..), Error)
 
 import qualified Frontend.Syntax as Sn
-import Frontend.Syntax hiding (Term, Type, Error)
+import Frontend.Syntax hiding (Term(..), Type, Error)
 
-import qualified Lowering.ANF as Ir
-import Lowering.ANF hiding (Term, emptyContext, bindGlobal)
+import qualified Lowering.Core as Ir
+import Lowering.ANF (lower)
 
 import Generation.CodeGen
 
@@ -90,10 +90,10 @@ fetchProto ident = cachedFallible dbProtoGen ident $ do
   let generated = emitSig sig
   pure generated
 
-fetchTypes :: Ident -> Query (Either Error [String])
+fetchTypes :: Ident -> Query (Either Error [Sn.Type])
 fetchTypes ident = cachedFallible dbTypes ident $ do
   (_, types) <- liftQuery (fetchANF ident)
-  pure (map emitTypeDef types)
+  pure types
 
 fetchCompiled :: FilePath -> Query (Either Error String)
 fetchCompiled path = cachedFallible dbCompiled path $ do
@@ -104,8 +104,11 @@ fetchCompiled path = cachedFallible dbCompiled path $ do
   code <- forM decls (liftQuery . fetchCode . Ident path . nameOf)
   pure $ unlines 
     [ "#include <stdio.h>"
+    , "#include <stdlib.h>"
     , "#include <stdbool.h>\n"
-    , unlines uniqueTypes
+    , unlines (map emitTypeDef uniqueTypes)
+    , unlines (map emitTypeOperationProtos uniqueTypes)
+    , unlines (map emitTypeOperations uniqueTypes)
     , unlines protos
     , unlines code
     , "int main() {"
@@ -129,7 +132,6 @@ main = do
         ParseError pErr -> putStrLn (errorBundlePretty pErr)
         TypeError  tErr -> putStrLn (show tErr)
         NameError  nErr -> putStrLn ("Can't Find '" ++ nErr ++ "'.")
-
 
 compileAndRun :: String -> IO ()
 compileAndRun code = withSystemTempDirectory "abc-compiler-run" $ \dir -> do
