@@ -17,16 +17,27 @@ import Lowering.MemoryManagement (insertMemoryOps)
 --
 
 lower :: S.Context -> S.Term -> Sig -> (Decl, [Type])
-lower ctx tm (Sig n ps r) = 
-  let anfCtx = Context [] (ctxGlob ctx)
-      fnCtx = foldl' (\c (p, ty) -> bindLocal (Var p ty) c) anfCtx ps
-      (t, s) = lowerTerm fnCtx tm
-  in (Fn n ps r t, concatMap (getTypesOf [] . snd) ps ++ s)
+lower ctx tm (Sig n ps r) = (Fn n ps r loweredTm, paramTs ++ loweredTs)
+  where
+    params = map (uncurry Var) ps
+    paramTs = concatMap (getTypesOfVal) params
+    newContext = Context [] (ctxGlob ctx)
+    fnContext = foldl' (flip bindLocal) newContext params
+    (loweredTm, loweredTs) = lowerTerm fnContext tm
 
 lowerTerm :: Context -> S.Term -> (Term, [Type])
-lowerTerm ctx tm = 
-  let (t, s) = runState (normalize ctx tm ret >>= insertMemoryOps) (LoweringState 0 [] [])
-  in (t, loweredTypes s)
+lowerTerm ctx tm = extractTypes (runState doLower initialState)
+  where
+    doLower :: ANF Term
+    doLower = do
+      normalized <- normalize ctx tm ret
+      insertMemoryOps (ctxBound ctx) normalized
+
+    extractTypes :: (Term, LoweringState) -> (Term, [Type])
+    extractTypes (t, s) = (t, loweredTypes s)
+
+    initialState :: LoweringState
+    initialState = LoweringState 0 [] [] 
 
 
 -- 
@@ -141,5 +152,4 @@ normalizeList ctx (t:ts) k =
   normalize ctx t $ \t' ->
     normalizeList ctx ts $ \ts' -> 
       k (t' : ts')
-
 

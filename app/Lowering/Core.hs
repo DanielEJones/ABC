@@ -99,15 +99,21 @@ registerType t@Fix{}    = do
 registerType TypeVar{} = error "Should never try to find type of unbound var"
 registerType _ = pure ()
 
-getTypesOf :: [Type] -> Type -> [Type]
-getTypesOf seen t@(Prod as) = concatMap (getTypesOf seen) as ++ [t]
-getTypesOf seen t@(Sum as)  = concatMap (getTypesOf seen) as ++ [t]
-getTypesOf seen t@(Array a) = getTypesOf seen a ++ [t]
-getTypesOf seen t@Fix{}
+getTypesOfVal :: Val -> [Type]
+getTypesOfVal = getTypesOf . typeOf
+
+getTypesOf :: Type -> [Type]
+getTypesOf = getTypesOf' [] 
+
+getTypesOf' :: [Type] -> Type -> [Type]
+getTypesOf' seen t@(Prod as) = concatMap (getTypesOf' seen) as ++ [t]
+getTypesOf' seen t@(Sum as)  = concatMap (getTypesOf' seen) as ++ [t]
+getTypesOf' seen t@(Array a) = getTypesOf' seen a ++ [t]
+getTypesOf' seen t@Fix{}
   | t `elem` seen = []
-  | otherwise = t : getTypesOf (t : seen) (unfoldType t) 
-getTypesOf _    TypeVar{}   = error "Should never find type of unbound var"
-getTypesOf _    _           = []
+  | otherwise = t : getTypesOf' (t : seen) (unfoldType t)
+getTypesOf' _    TypeVar{}   = error "Should never find type of unbound var"
+getTypesOf' _    _           = []
 
 --
 -- Context

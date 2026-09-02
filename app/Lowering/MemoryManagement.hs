@@ -12,10 +12,14 @@ import Lowering.Core
 type LiveSet = Map Name Type
 
 
-insertMemoryOps :: Term -> ANF Term
-insertMemoryOps tm = do 
-  -- (liveSet, term) <- insertMemoryOps' Map.empty tm
-  insertMemoryOps' Map.empty tm >>= (pure . snd)
+insertMemoryOps :: [Val] -> Term -> ANF Term
+insertMemoryOps params tm = do 
+  (liveSet, term) <- insertMemoryOps' Map.empty tm
+  let termWithDroppedParams = reduce params term $ \param -> 
+        if Map.notMember (nameOf param) liveSet
+            then Drop param
+            else id
+  pure (termWithDroppedParams)
 
 insertMemoryOps' :: LiveSet -> Term -> ANF (LiveSet, Term)
 insertMemoryOps' start tm = case tm of
