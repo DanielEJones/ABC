@@ -130,6 +130,8 @@ normalize ctx tm k = case tm of
 
   S.NumLit i -> k (NumLit i)
 
+  S.ByteLit b -> k (ByteLit b)
+
   S.Arith o t u -> 
     normalize ctx t $ \t' ->
       normalize ctx u $ \u' ->

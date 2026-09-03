@@ -105,7 +105,9 @@ fetchCompiled path = cachedFallible dbCompiled path $ do
   pure $ unlines 
     [ "#include <stdio.h>"
     , "#include <stdlib.h>"
-    , "#include <stdbool.h>\n"
+    , "#include <stdint.h>"
+    , "#include <stdbool.h>"
+    , ""
     , unlines (map emitTypeDef uniqueTypes)
     , unlines (map emitTypeOperationProtos uniqueTypes)
     , unlines (map emitTypeOperations uniqueTypes)
