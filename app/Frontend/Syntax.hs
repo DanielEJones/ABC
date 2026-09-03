@@ -221,8 +221,9 @@ check ctx tm ty = case (tm, ty) of
     utm <- check ctx u a
     pure (If a vtm ttm utm)
 
-  (S.NumLit b, Byte) | b < 256 -> pure (ByteLit b)
-                     | otherwise -> err ctx (TooLargeNumLit 256 b)
+  (S.NumLit b, Byte) 
+    | 0 <= b && b <= 255 -> pure (ByteLit b)
+    | otherwise -> err ctx (NumLitOutOfRange 0 255 b)
 
   (S.NumLit i, Number) -> pure (NumLit i)
 
@@ -281,7 +282,7 @@ data Error'
   | ArgumentMismatch Name Int Int
   | CannotPerfomOn String String
   | OutOfBounds Int Int
-  | TooLargeNumLit Int Int
+  | NumLitOutOfRange Int Int Int
   deriving Show
 
 
