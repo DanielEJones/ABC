@@ -43,6 +43,9 @@ pair = (,)
 reduce :: [a] -> b -> (a -> b -> b) -> b
 reduce as b f = foldr f b as
 
+for :: [a] -> (a -> b) -> [b]
+for = flip map
+
 
 class HasName a where
   nameOf :: a -> Name

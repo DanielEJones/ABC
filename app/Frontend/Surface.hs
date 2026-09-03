@@ -19,7 +19,7 @@ data Decl
 data Term
   = TmLoc Loc Term
 
-  | Let Name Type Term Term
+  | Let Pattern Type Term Term
   | Call Name [Term]
   | Var Name
 
@@ -27,7 +27,7 @@ data Term
   | Proj Int Term
 
   | Inj Int Term
-  | Match Term [(Name, Term)]
+  | Match Term [(Pattern, Term)]
 
   | ArrayLit [Term]
   | ArrayNew Term Term
@@ -48,6 +48,12 @@ data Term
   | Arith AOp Term Term
   | Comp COp Term Term
   | Logic LOp Term Term
+  deriving Show
+
+data Pattern
+  = PLoc Loc Pattern
+  | PVar Name
+  | PTuple [Name]
   deriving Show
 
 data Type
@@ -72,6 +78,9 @@ instance HasLocation Decl where
 instance HasLocation Term where
   locate = TmLoc
 
+instance HasLocation Pattern where
+  locate = PLoc
+
 instance HasLocation Type where
   locate = TyLoc
 
@@ -86,7 +95,7 @@ instance HasName Decl where
 
 parseLet :: Parser Term
 parseLet = parens . into' "let" $ 
-  Let <$> parseAtom
+  Let <$> parsePattern
       <*> parseType
       <*> parseTerm
       <*> parseTerm
@@ -100,8 +109,7 @@ parseVar :: Parser Term
 parseVar = Var <$> parseAtom
 
 parsePair :: Parser Term
-parsePair = parens . into' "pair" $
-  Pair <$> many parseTerm
+parsePair = curlies $ Pair <$> many parseTerm
 
 parseProj :: Parser Term
 parseProj = parens . into' "project" $
@@ -116,7 +124,7 @@ parseInj = parens . into' "inject" $
 parseMatch :: Parser Term
 parseMatch = parens . into' "match" $
   Match <$> parseTerm
-        <*> many (parens $ pair <$> braces parseAtom <*> parseTerm)
+        <*> many (parens $ pair <$> braces parsePattern <*> parseTerm)
 
 parseArrayLit :: Parser Term
 parseArrayLit = braces (ArrayLit <$> many parseTerm)
@@ -217,6 +225,20 @@ parseTerm = located $
   <|> parseCharLit
   <|> parseStringLit
   <|> parseVar
+
+
+-- 
+-- Pattern Parser
+--
+
+parsePVar :: Parser Pattern
+parsePVar = PVar <$> parseAtom
+
+parsePTuple :: Parser Pattern
+parsePTuple = curlies (PTuple <$> many parseAtom)
+
+parsePattern :: Parser Pattern
+parsePattern = located (parsePVar <|> parsePTuple)
 
 
 --
@@ -321,6 +343,9 @@ parens = between (symbol "(") (symbol ")")
 
 braces :: Parser a -> Parser a
 braces = between (symbol "[") (symbol "]")
+
+curlies :: Parser a -> Parser a
+curlies = between (symbol "{") (symbol "}")
 
 located :: HasLocation a => Parser a -> Parser a
 located = (<*>) (locate <$> lexeme getSourcePos)

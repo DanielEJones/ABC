@@ -16,7 +16,7 @@ insertMemoryOps :: [Val] -> Term -> ANF Term
 insertMemoryOps params tm = do 
   (liveSet, term) <- insertMemoryOps' Map.empty tm
   let termWithDroppedParams = reduce params term $ \param -> 
-        if Map.notMember (nameOf param) liveSet
+        if Map.notMember (nameOf param) liveSet && isHeapVal param
             then Drop param
             else id
   pure (termWithDroppedParams)
@@ -30,6 +30,21 @@ insertMemoryOps' start tm = case tm of
       else do 
         (live', e', copies, drops) <- visitExpr live e
         pure (Map.delete n live', copies . Let n t e' . drops $ k')
+
+  LetMany ns v k -> do
+    -- ns may need dropping if 
+    (live, k') <- insertMemoryOps' start k
+    let names = map fst ns
+    if all (flip Map.notMember live) names
+      then pure (live, k')
+      else do
+        let withDrops = reduce (map (uncurry Var) ns) k' $ \val ->
+              if Map.notMember (nameOf val) live && isHeapVal val
+                  then Drop val
+                  else id
+
+        (live', v', copies) <- consumeVal live v
+        pure (foldr Map.delete live' names, copies . LetMany ns v' $ withDrops)
 
   LetIf n t d u v k -> do
     -- `d` shouldn't ever be a heap type; it must type check to be a bool

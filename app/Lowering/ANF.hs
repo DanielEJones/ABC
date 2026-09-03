@@ -46,9 +46,16 @@ lowerTerm ctx tm = extractTypes (runState doLower initialState)
 
 normalize :: Context -> S.Term -> (Val -> ANF Term) -> ANF Term
 normalize ctx tm k = case tm of
-  S.Let _ _ v u -> 
+  S.Let (PVar{}) _ v u -> 
     normalize ctx v $ \v' ->
       normalize (bindLocal v' ctx) u k
+
+  S.Let (PTuple{}) t v u -> 
+    normalize ctx v $ \v' -> do
+      registerType t
+      freshVals <- mapM (\ty -> pair <$> fresh <*> pure ty) (prodType t)
+      let newCtx = foldr bindLocal ctx $ map (uncurry Var) freshVals
+      LetMany freshVals v' <$> normalize newCtx u k
 
   S.Call f ts -> 
     normalizeList ctx ts $ \ts' ->
@@ -73,8 +80,18 @@ normalize ctx tm k = case tm of
       registerType a
       n <- fresh
 
-      let doBranch :: (Name, S.Term) -> Int -> ANF Term
-          doBranch (b, t) i = Let b (injType v' i) (Cast i v') <$> normalize (bindLocal (Var b $ injType v' i) ctx) t (pure . Assign n)
+      let doBranch :: (Pattern, S.Term) -> Int -> ANF Term
+          doBranch (b, t) i = do 
+            let branchType = injType v' i
+            case b of
+              PVar bn -> Let bn branchType (Cast i v') 
+                     <$> normalize (bindLocal (Var bn branchType) ctx) t (pure . Assign n)
+              PTuple ns -> do 
+                bn <- fresh
+                Let bn branchType (Cast i v')
+                       <$> LetMany (zip ns $ prodType branchType) (Var bn branchType)
+                       <$> normalize (bindManyLocals ns (prodType branchType) ctx) t (pure . Assign n)
+          -- Let b (injType v' i) (Cast i v') <$> normalize (bindLocal (Var b $ injType v' i) ctx) t (pure . Assign n)
 
       bs' <- zipWithM doBranch bs [0..]
 
@@ -154,4 +171,7 @@ normalizeList ctx (t:ts) k =
   normalize ctx t $ \t' ->
     normalizeList ctx ts $ \ts' -> 
       k (t' : ts')
+
+bindManyLocals :: [Name] -> [Type] -> Context -> Context
+bindManyLocals ns ts ctx = foldr (bindLocal . uncurry Var) ctx (zip ns ts)
 
