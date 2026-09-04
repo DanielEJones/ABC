@@ -43,7 +43,7 @@ data Term
 
 data Pattern
   = PVar Name
-  | PTuple [Name]
+  | PTuple [Pattern]
   deriving Show
 
 data Type
@@ -276,7 +276,7 @@ checkPattern :: Context -> S.Pattern -> Elab Pattern
 checkPattern ctx pat = case pat of
   S.PLoc l p -> checkPattern (withLoc l ctx) p
   S.PVar n -> pure (PVar n)
-  S.PTuple ns -> pure (PTuple ns)
+  S.PTuple ns -> PTuple <$> mapM (checkPattern ctx) ns
 
 checkType :: Context -> S.Type -> Elab Type
 checkType ctx ty = case ty of
@@ -357,7 +357,7 @@ bindLocal n t ctx = ctx{ ctxVars = (n, t) : ctxVars ctx }
 bindPattern :: Pattern -> Type -> Context -> Context 
 bindPattern pat ty = case (pat, ty) of
   (PVar n, a) -> bindLocal n a
-  (PTuple ns, Prod ts) -> flip (foldr $ uncurry bindLocal) (zip ns ts)
+  (PTuple ns, Prod ts) -> flip (foldr $ uncurry bindPattern) (zip ns ts)
   (PTuple{}, _) -> error "Should never do this."
 
 findLocal :: Name -> Context -> Maybe (Ix, Type)

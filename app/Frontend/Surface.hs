@@ -53,7 +53,7 @@ data Term
 data Pattern
   = PLoc Loc Pattern
   | PVar Name
-  | PTuple [Name]
+  | PTuple [Pattern]
   deriving Show
 
 data Type
@@ -124,7 +124,7 @@ parseInj = parens . into' "inject" $
 parseMatch :: Parser Term
 parseMatch = parens . into' "match" $
   Match <$> parseTerm
-        <*> many (parens $ pair <$> braces parsePattern <*> parseTerm)
+        <*> many (parens $ pair <$> parsePattern <*> parseTerm)
 
 parseArrayLit :: Parser Term
 parseArrayLit = braces (ArrayLit <$> many parseTerm)
@@ -235,7 +235,7 @@ parsePVar :: Parser Pattern
 parsePVar = PVar <$> parseAtom
 
 parsePTuple :: Parser Pattern
-parsePTuple = curlies (PTuple <$> many parseAtom)
+parsePTuple = curlies (PTuple <$> many parsePattern)
 
 parsePattern :: Parser Pattern
 parsePattern = located (parsePVar <|> parsePTuple)
