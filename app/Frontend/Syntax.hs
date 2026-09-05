@@ -11,7 +11,7 @@ import qualified Frontend.Surface as S
 --
 
 data Term
-  = Let Name Type Term Term
+  = Let Pattern Type Term Term
   | Call Name [Term]
   | Var Ix
 
@@ -19,7 +19,7 @@ data Term
   | Proj Int Term
 
   | Inj Type Int Term
-  | Match Type Term [(Name, Term)]
+  | Match Type Term [(Pattern, Term)]
 
   | ArrayLit Type [Term]
   | ArrayNew Type Term Term
@@ -39,6 +39,11 @@ data Term
   | Arith AOp Term Term
   | Comp COp Term Term
   | Logic LOp Term Term
+  deriving Show
+
+data Pattern
+  = PVar Name
+  | PTuple [Pattern]
   deriving Show
 
 data Type
@@ -70,11 +75,27 @@ infer :: Context -> S.Term -> Elab (Term, Type)
 infer ctx tm = case tm of
   S.TmLoc l t -> infer (withLoc l ctx) t
 
-  S.Let n t v u -> do
+  S.Let (S.PLoc l p) t v k -> do 
+    infer (withLoc l ctx) (S.Let p t v k)
+
+  S.Let p@(S.PVar n) t v k -> do
+    cp <- checkPattern ctx p
     ct <- checkType ctx t
     vtm <- check ctx v ct
-    (utm, a) <- infer ctx u
-    pure (Let n ct vtm utm, a)
+    (ktm, a) <- infer (bindLocal n ct ctx) k
+    pure (Let cp ct vtm ktm, a)
+
+  S.Let p@(S.PTuple ns) t v k -> do
+    cp <- checkPattern ctx p
+    ct <- checkType ctx t
+    case ct of
+      Prod ts -> do
+        when (length ns /= length ts) (err ctx $ OutOfBounds (length ns) (length ts))
+        vtm <- check ctx v ct
+        (ktm, a) <- infer (bindPattern cp ct ctx) k
+        pure (Let cp ct vtm ktm, a)
+
+      _ -> err ctx (CannotPerfomOn "destructuring" "non-product type")
 
   S.Call n ts -> case findGlobal n ctx of
     Nothing -> err ctx (UnboundFn n)
@@ -167,11 +188,27 @@ check :: Context -> S.Term -> Type -> Elab Term
 check ctx tm ty = case (tm, ty) of
   (S.TmLoc l t, a) -> check (withLoc l ctx) t a
 
-  (S.Let n t u v, a) -> do
+  (S.Let (S.PLoc l p) t v k, a) -> do 
+    check (withLoc l ctx) (S.Let p t v k) a
+
+  (S.Let p@(S.PVar n) t v k, a) -> do
+    cp <- checkPattern ctx p
     ct <- checkType ctx t
-    utm <- check ctx u ct
-    vtm <- check (bindLocal n ct ctx) v a
-    pure (Let n ct utm vtm)
+    vtm <- check ctx v ct
+    ktm <- check (bindLocal n ct ctx) k a
+    pure (Let cp ct vtm ktm)
+
+  (S.Let p@(S.PTuple ns) t v k, a) -> do
+    cp <- checkPattern ctx p
+    ct <- checkType ctx t
+    case ct of
+      Prod ts -> do
+        when (length ns /= length ts) (err ctx $ OutOfBounds (length ns) (length ts))
+        vtm <- check ctx v ct
+        ktm <- check (bindPattern cp ct ctx) k a
+        pure (Let cp ct vtm ktm)
+
+      _ -> err ctx (CannotPerfomOn "destructuring" "non-product type")
 
   (S.Pair ts, Prod as) -> do
     when (length ts /= length as) (err ctx $ ArgumentMismatch "pair" (length as) (length ts))
@@ -192,7 +229,9 @@ check ctx tm ty = case (tm, ty) of
     case tty of
       Sum ts -> do
         when (length bs /= length ts) (err ctx $ ArgumentMismatch "match" (length ts) (length bs))
-        let checkBranch (n, u) bty = pair n <$> check (bindLocal n bty ctx) u a
+        let checkBranch (n, u) bty = do 
+              cp <- checkPattern ctx n 
+              pair cp <$> check (bindPattern cp bty ctx) u a
         cbs <- zipWithM checkBranch bs ts
         pure (Match a ttm cbs)
       _ -> err ctx (CannotPerfomOn "match" "non-sum type")
@@ -232,6 +271,12 @@ check ctx tm ty = case (tm, ty) of
     if tty /= a && not (a == Number && tty == Byte)
       then err ctx (TypeMismatch tty a)
       else pure ttm
+
+checkPattern :: Context -> S.Pattern -> Elab Pattern
+checkPattern ctx pat = case pat of
+  S.PLoc l p -> checkPattern (withLoc l ctx) p
+  S.PVar n -> pure (PVar n)
+  S.PTuple ns -> PTuple <$> mapM (checkPattern ctx) ns
 
 checkType :: Context -> S.Type -> Elab Type
 checkType ctx ty = case ty of
@@ -308,6 +353,12 @@ err ctx = Left . Error (ctxLoc ctx)
 
 bindLocal :: Name -> Type -> Context -> Context
 bindLocal n t ctx = ctx{ ctxVars = (n, t) : ctxVars ctx }
+
+bindPattern :: Pattern -> Type -> Context -> Context 
+bindPattern pat ty = case (pat, ty) of
+  (PVar n, a) -> bindLocal n a
+  (PTuple ns, Prod ts) -> flip (foldr $ uncurry bindPattern) (zip ns ts)
+  (PTuple{}, _) -> error "Should never do this."
 
 findLocal :: Name -> Context -> Maybe (Ix, Type)
 findLocal n ctx = go (ctxVars ctx) 0

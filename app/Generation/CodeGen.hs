@@ -34,6 +34,10 @@ emitTerm :: Int -> Term -> String
 emitTerm depth (Let n t e k) = 
      indent depth ++ emitType t ++ " " ++ n ++ " = " ++ emitExpr e ++ ";\n" 
   ++ emitTerm depth k
+emitTerm depth (LetMany ns v k) = unlines (for (zip [0 :: Int ..] ns) $ \(i, (n, t)) -> do
+     indent depth ++ emitType t ++ " " ++ n ++ " = " ++ emitVal v ++ "._" ++ show i ++ ";")
+  ++ emitTerm depth k
+     
 emitTerm depth (LetIf n t v l r k) = 
      indent depth ++ emitType t ++ " " ++ n ++ ";\n" 
   ++ indent depth ++ "if (" ++ emitVal v ++ ") {\n" 

@@ -16,6 +16,7 @@ data Decl
 
 data Term 
   = Let Name Type Expr Term 
+  | LetMany [(Name, Type)] Val Term
   | LetIf Name Type Val Term Term Term
   | LetMatch Name Type Val [Term] Term
   | LetArray Name Type Val Val Term
@@ -159,6 +160,10 @@ typeOf (BoolLit _) = Boolean
 instance HasName Val where
   nameOf (Var n _) = n
   nameOf _         = error "Sucks to suck"
+
+prodType :: Type -> [Type]
+prodType (Prod ts) = ts
+prodType _         = error "Terms should be well typed."
 
 projType :: Val -> Int -> Type
 projType (Var _ (Prod ts)) i = ts !! i
