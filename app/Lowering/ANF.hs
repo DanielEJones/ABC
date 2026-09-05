@@ -51,17 +51,6 @@ normalize ctx tm k = case tm of
       normalizePattern ctx pat v' $ \ctx' ->
         normalize ctx' u k
 
-  -- S.Let (PVar{}) _ v u -> 
-  --   normalize ctx v $ \v' ->
-  --     normalize (bindLocal v' ctx) u k
-
-  -- S.Let (PTuple{}) t v u -> 
-  --   normalize ctx v $ \v' -> do
-  --     registerType t
-  --     freshVals <- mapM (\ty -> pair <$> fresh <*> pure ty) (prodType t)
-  --     let newCtx = foldr bindLocal ctx $ map (uncurry Var) freshVals
-  --     LetMany freshVals v' <$> normalize newCtx u k
-
   S.Call f ts -> 
     normalizeList ctx ts $ \ts' ->
       letBind (getRetType f ctx) (Call f ts') k
@@ -84,20 +73,6 @@ normalize ctx tm k = case tm of
     normalize ctx v $ \v' -> do
       registerType a
       n <- fresh
-
-      -- let doBranch :: (Pattern, S.Term) -> Int -> ANF Term
-      --     doBranch (b, t) i = do 
-      --       let branchType = injType v' i
-      --       case b of
-      --         PVar bn -> Let bn branchType (Cast i v') 
-      --                <$> normalize (bindLocal (Var bn branchType) ctx) t (pure . Assign n)
-      --         PTuple ns -> do 
-      --           bn <- fresh
-      --           Let bn branchType (Cast i v')
-      --                  <$> LetMany (zip ns $ prodType branchType) (Var bn branchType)
-      --                  <$> normalize (bindManyLocals ns (prodType branchType) ctx) t (pure . Assign n)
-      --     -- Let b (injType v' i) (Cast i v') <$> normalize (bindLocal (Var b $ injType v' i) ctx) t (pure . Assign n)
-
       bs' <- zipWithM (normalizeBranch ctx v' $ pure . Assign n) [0..] bs 
       LetMatch n a v' bs' <$> k (Var n a)
 
@@ -198,8 +173,4 @@ normalizeBranch ctx v k i (pat, tm) = do
   Let n branchType (Cast i v) <$>
     (normalizePattern ctx pat (Var n branchType) $ \ctx' -> 
       normalize ctx' tm k)
-
-
-bindManyLocals :: [Name] -> [Type] -> Context -> Context
-bindManyLocals ns ts ctx = foldr (bindLocal . uncurry Var) ctx (zip ns ts)
 
